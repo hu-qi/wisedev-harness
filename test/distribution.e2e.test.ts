@@ -63,4 +63,32 @@ describe('git distribution lifecycle', () => {
     await rollbackHarness(manifest, project, snapshots.at(-1));
     expect(await readFile(join(project, '.agents/skills/demo/SKILL.md'), 'utf8')).toContain('v1');
   });
+
+  it('resolves a shared source alias into the same reproducible lock semantics', async () => {
+    process.env.WISEDEV_HARNESS_ALLOW_FILE_GIT = '1';
+    const source = await mkdtemp(join(tmpdir(), 'wisedev-shared-source-'));
+    const project = await mkdtemp(join(tmpdir(), 'wisedev-shared-project-'));
+    roots.push(source, project);
+    git(source, 'init', '-b', 'main');
+    git(source, 'config', 'user.email', 'test@example.com');
+    git(source, 'config', 'user.name', 'WiseDev Test');
+    const first = await commitVersion(source, 'shared-v1');
+
+    const manifest = ManifestSchema.parse({
+      version: 1,
+      project: { name: 'fixture' },
+      runtimes: ['codex'],
+      sources: [{ name: 'team', url: pathToFileURL(source).href, ref: 'main' }],
+      skills: [{ name: 'demo', source: 'shared', sourceName: 'team', path: 'skills/demo' }]
+    });
+
+    const lock = await pullHarness(manifest, project);
+    expect(lock.skills.demo).toMatchObject({ source: 'git', sourceName: 'team', resolved: first, path: 'skills/demo' });
+    expect(await readFile(join(project, '.agents/skills/demo/SKILL.md'), 'utf8')).toContain('shared-v1');
+
+    await commitVersion(source, 'shared-v2');
+    const pinned = await pullHarness(manifest, project);
+    expect(pinned.skills.demo.resolved).toBe(first);
+    expect((await diffHarness(manifest, project))[0].status).toBe('update-available');
+  });
 });
