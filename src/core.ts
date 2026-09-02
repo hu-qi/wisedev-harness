@@ -8,18 +8,18 @@ import { defaultManifest, loadManifest, MANIFEST_PATH, serializeManifest, type M
 import { isManifestTrusted } from './trust.js';
 
 export interface Check { name: string; ok: boolean; detail: string }
-
 async function exists(path: string) { try { await access(path, constants.F_OK); return true; } catch { return false; } }
 
 export async function initHarness(cwd = process.cwd(), force = false) {
   const manifestPath = resolve(cwd, MANIFEST_PATH);
   await mkdir(resolve(cwd, '.agents'), { recursive: true });
-  if (await exists(manifestPath)) {
-    if (!force) throw new Error(`${MANIFEST_PATH} already exists; use --force to replace it.`);
-  }
+  if (await exists(manifestPath) && !force) throw new Error(`${MANIFEST_PATH} already exists; use --force to replace it.`);
   const manifest = defaultManifest(basename(cwd));
   await writeFile(manifestPath, serializeManifest(manifest), 'utf8');
-  await writeFile(resolve(cwd, '.agents/.gitignore'), ['cache/', 'history/', 'skills/', 'state.json', 'trust.json', '*.staging-*', ''].join('\n'), 'utf8');
+  await writeFile(resolve(cwd, '.agents/.gitignore'), [
+    'cache/', 'history/', 'skills/', 'sessions/', 'session-summaries/', 'learning-candidates/',
+    'session-current.json', 'state.json', 'trust.json', '*.staging-*', ''
+  ].join('\n'), 'utf8');
   const touched = await applyAdapters(manifest, cwd);
   await writeFile(resolve(cwd, '.agents/state.json'), JSON.stringify({ schemaVersion: 1, manifestVersion: manifest.version, updatedAt: new Date().toISOString(), runtimes: manifest.runtimes }, null, 2) + '\n');
   return { manifestPath, touched };
