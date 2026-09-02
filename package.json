@@ -1,6 +1,6 @@
 {
   "name": "wisedev-harness",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Vendor-neutral runtime, distribution, security, knowledge, and controlled-evolution harness for AI coding agents",
   "type": "module",
   "bin": {
