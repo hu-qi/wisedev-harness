@@ -17,4 +17,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm install
+      - if: matrix.node == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-bootstrap
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
       - run: npm run ci
