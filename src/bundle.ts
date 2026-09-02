@@ -2,10 +2,11 @@ import { promisify } from 'node:util';
 import { gzip, gunzip } from 'node:zlib';
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { hashTree, readLock, writeLock, type HarnessLock } from './distribution.js';
+import { hashTree, readLock, SKILLS_DIR, writeLock, type HarnessLock } from './distribution.js';
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
+const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
 interface BundleFile { path: string; contentBase64: string }
 interface BundleSkill { contentSha256: string; files: BundleFile[] }
@@ -41,10 +42,13 @@ export async function exportOfflineBundle(output: string, cwd = process.cwd()): 
   if (!lock) throw new Error('Harness lockfile is required before offline export. Run `wisedev-harness pull`.');
   const bundle: OfflineBundle = { version: 1, createdAt: new Date().toISOString(), lock, skills: {} };
   for (const [name, item] of Object.entries(lock.skills)) {
-    const root = resolve(cwd, item.target);
-    const actual = await hashTree(root);
+    if (!SAFE_NAME.test(name)) throw new Error(`Unsafe Skill name '${name}' in lockfile.`);
+    const canonicalTarget = resolve(cwd, SKILLS_DIR, name);
+    const expectedTarget = relative(cwd, canonicalTarget).split(sep).join('/');
+    if (item.target !== expectedTarget) throw new Error(`Cannot export non-canonical Skill target for '${name}': ${item.target}.`);
+    const actual = await hashTree(canonicalTarget);
     if (actual !== item.contentSha256) throw new Error(`Cannot export drifted Skill '${name}': expected ${item.contentSha256}, got ${actual}.`);
-    bundle.skills[name] = { contentSha256: actual, files: await collectFiles(root) };
+    bundle.skills[name] = { contentSha256: actual, files: await collectFiles(canonicalTarget) };
   }
   const target = resolve(cwd, output);
   await mkdir(dirname(target), { recursive: true });
@@ -75,10 +79,13 @@ export async function importOfflineBundle(input: string, cwd = process.cwd()): P
   if (raw.version !== 1 || raw.lock?.version !== 1 || typeof raw.skills !== 'object') throw new Error('Unsupported or malformed WiseDev offline bundle.');
 
   for (const [name, locked] of Object.entries(raw.lock.skills)) {
+    if (!SAFE_NAME.test(name)) throw new Error(`Unsafe Skill name '${name}' in offline bundle.`);
     const skill = raw.skills[name];
     if (!skill) throw new Error(`Offline bundle is missing Skill '${name}'.`);
     if (skill.contentSha256 !== locked.contentSha256) throw new Error(`Offline bundle metadata mismatch for Skill '${name}'.`);
-    const target = resolve(cwd, locked.target);
+    const target = resolve(cwd, SKILLS_DIR, name);
+    const canonicalTarget = relative(cwd, target).split(sep).join('/');
+    if (locked.target !== canonicalTarget) throw new Error(`Offline bundle target mismatch for Skill '${name}': expected ${canonicalTarget}, got ${locked.target}.`);
     await materializeSkill(target, skill.files);
     const actual = await hashTree(target);
     if (actual !== locked.contentSha256) throw new Error(`Offline bundle integrity failure for Skill '${name}': expected ${locked.contentSha256}, got ${actual}.`);
