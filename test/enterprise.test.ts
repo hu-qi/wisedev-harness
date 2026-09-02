@@ -71,6 +71,28 @@ describe('enterprise operations', () => {
     expect(bundle.manifestSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('redacts MCP env and header values from audit bundles', async () => {
+    const root = await temp('wisedev-enterprise-audit-mcp-');
+    const manifest = ManifestSchema.parse({
+      version: 1,
+      project: { name: 'fixture' },
+      runtimes: ['claude'],
+      mcpServers: [
+        { name: 'local', transport: 'stdio', command: 'server', env: { API_TOKEN: 'super-secret-env-value' } },
+        { name: 'remote', transport: 'http', url: 'https://mcp.example.com', headers: { Authorization: 'Bearer super-secret-header-value' } }
+      ]
+    });
+    await mkdir(join(root, '.agents'), { recursive: true });
+    await writeFile(join(root, '.agents/manifest.yaml'), serializeManifest(manifest));
+    const output = await exportAuditBundle('audit.wdh-audit.gz', manifest, root);
+    const bundle = JSON.parse(gunzipSync(await readFile(output)).toString('utf8'));
+    const encoded = JSON.stringify(bundle);
+    expect(encoded).not.toContain('super-secret-env-value');
+    expect(encoded).not.toContain('super-secret-header-value');
+    expect(bundle.manifest.mcpServers[0].env.API_TOKEN).toBe('[REDACTED]');
+    expect(bundle.manifest.mcpServers[1].headers.Authorization).toBe('[REDACTED]');
+  });
+
   it('keeps telemetry disabled by default and redacts enabled local events', async () => {
     const root = await temp('wisedev-enterprise-telemetry-');
     const manifest = await manifestAt(root);
