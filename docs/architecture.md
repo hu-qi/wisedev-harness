@@ -10,7 +10,7 @@ wisedev-team    -> multi-role orchestration and review gates
 wisedev-harness -> runtime, installation, verification, distribution, evaluation and evolution
 ```
 
-## v0.1 runtime
+## Local runtime
 
 ```text
 .agents/manifest.yaml
@@ -23,17 +23,17 @@ wisedev-harness -> runtime, installation, verification, distribution, evaluation
         |
         v
  adapter plan
-   |          |
- Claude     Codex
-   |          |
-   v          v
-.claude/*  .codex/* + AGENTS.md managed block
-        |
-        v
-.agents/state.json
-        |
-        v
-      verify
+   |        |        |          |
+ Claude   Codex    Cursor    OpenCode
+   |        |        |          |
+   v        v        v          v
+.claude/* .codex/* .cursor/* .opencode/* + opencode.json instruction
+        \      |       |       /
+               v
+       .agents/state.json
+               |
+               v
+             verify
 ```
 
 ### Manifest
@@ -50,9 +50,13 @@ Before a write, sync classifies the target as missing, unchanged, safely-managed
 
 Codex rules are special: WiseDev owns only a marked block inside `AGENTS.md`, so user-maintained content outside that block remains untouched.
 
+Cursor rules are adapter-rendered `.mdc` files rather than copied Markdown.
+
+OpenCode rules require explicit activation. WiseDev owns only its single instructions glob in `opencode.json`; other keys and existing instructions are preserved. Configurations that cannot be safely parsed/reconciled abort the synchronization plan before filesystem mutation.
+
 ### Verification
 
-Verification recomputes expected resources from the manifest and sources, then compares manifest hash, local state, target file hashes, and the managed Codex rules block. It does not repair anything.
+Verification recomputes expected resources from the manifest and sources, then compares manifest hash, local state, target file hashes, agent-specific activation, and the managed Codex rules block. It does not repair anything.
 
 ## Future control plane
 

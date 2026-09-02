@@ -1,4 +1,4 @@
-export const SUPPORTED_AGENTS = ['claude', 'codex', 'cursor'] as const;
+export const SUPPORTED_AGENTS = ['claude', 'codex', 'cursor', 'opencode'] as const;
 
 export type AgentId = (typeof SUPPORTED_AGENTS)[number];
 export type ConflictPolicy = 'fail' | 'overwrite';
