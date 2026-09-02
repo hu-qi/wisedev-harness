@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { Manifest, McpServer, RuntimeName } from './manifest.js';
+import { isManifestTrusted } from './trust.js';
 
 const STATE_PATH = '.agents/mcp-state.json';
 const CODEX_START = '# wisedev-harness:mcp:start';
@@ -97,6 +98,9 @@ async function reconcileCodex(manifest: Manifest, cwd: string, state: McpState, 
 }
 
 export async function reconcileMcp(manifest: Manifest, cwd = process.cwd(), remove = false): Promise<string[]> {
+  if (!remove && !(await isManifestTrusted(cwd))) {
+    throw new Error('MCP injection requires the exact current manifest to be trusted. Review .agents/manifest.yaml and run `wisedev-harness trust` first.');
+  }
   const state = await readState(cwd);
   const files: string[] = [];
   for (const runtime of manifest.runtimes) {
