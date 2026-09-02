@@ -18,6 +18,7 @@ export async function initHarness(cwd = process.cwd(), force = false) {
   await writeFile(manifestPath, serializeManifest(manifest), 'utf8');
   await writeFile(resolve(cwd, '.agents/.gitignore'), [
     'cache/', 'history/', 'skills/', 'sessions/', 'session-summaries/', 'learning-candidates/',
+    'evolution-candidates/', 'evolution-backups/', 'evolution-eval/',
     'session-current.json', 'state.json', 'trust.json', '*.staging-*', ''
   ].join('\n'), 'utf8');
   const touched = await applyAdapters(manifest, cwd);
