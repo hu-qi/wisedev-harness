@@ -1,29 +1,18 @@
-import { createHash } from 'node:crypto';
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
-import type { Manifest } from './manifest.js';
-import { readLock } from './distribution.js';
+import { stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import type { Manifest, Skill } from './manifest.js';
+import { hashTree, readLock } from './distribution.js';
 
 async function exists(path: string): Promise<boolean> {
   try { await stat(path); return true; } catch { return false; }
 }
 
-async function hashTree(root: string): Promise<string> {
-  const hasher = createHash('sha256');
-  async function walk(path: string): Promise<void> {
-    const info = await stat(path);
-    if (info.isDirectory()) {
-      const entries = (await readdir(path, { withFileTypes: true })).filter(e => e.name !== '.git').sort((a, b) => a.name.localeCompare(b.name));
-      for (const entry of entries) await walk(join(path, entry.name));
-      return;
-    }
-    if (!info.isFile()) return;
-    hasher.update(`file:${relative(root, path).split(sep).join('/')}\0`);
-    hasher.update(await readFile(path));
-    hasher.update('\0');
-  }
-  await walk(root);
-  return hasher.digest('hex');
+function expectedSource(manifest: Manifest, skill: Skill): { url: string; ref: string; path?: string } | null {
+  if (skill.source === 'local') return null;
+  if (skill.source === 'git') return { url: skill.url, ref: skill.ref, ...(skill.path ? { path: skill.path } : {}) };
+  const source = manifest.sources.find(item => item.name === skill.sourceName);
+  if (!source) throw new Error(`Skill '${skill.name}' references unknown shared source '${skill.sourceName}'.`);
+  return { url: source.url, ref: source.ref, path: skill.path };
 }
 
 export interface IntegrityCheck { name: string; ok: boolean; detail: string }
@@ -32,14 +21,15 @@ export async function checkDistributionIntegrity(manifest: Manifest, cwd = proce
   const lock = await readLock(cwd);
   const checks: IntegrityCheck[] = [];
   for (const skill of manifest.skills) {
-    if (skill.source !== 'git') continue;
+    const expected = expectedSource(manifest, skill);
+    if (!expected) continue;
     const pinned = lock?.skills[skill.name];
     if (!pinned) {
-      checks.push({ name: `lock:${skill.name}`, ok: false, detail: 'git skill is not pinned; run wisedev-harness pull' });
+      checks.push({ name: `lock:${skill.name}`, ok: false, detail: 'remote skill is not pinned; run wisedev-harness pull' });
       continue;
     }
-    const sameSource = pinned.url === skill.url && pinned.ref === skill.ref && pinned.path === skill.path;
-    checks.push({ name: `lock:${skill.name}`, ok: sameSource, detail: sameSource ? `commit ${pinned.resolved}` : 'manifest source/ref/path differs from lockfile' });
+    const sameSource = pinned.url === expected.url && pinned.ref === expected.ref && pinned.path === expected.path;
+    checks.push({ name: `lock:${skill.name}`, ok: sameSource, detail: sameSource ? `commit ${pinned.resolved}` : 'effective source/ref/path differs from lockfile' });
     const target = resolve(cwd, pinned.target);
     if (!(await exists(target))) {
       checks.push({ name: `integrity:${skill.name}`, ok: false, detail: `installed target missing: ${pinned.target}` });
