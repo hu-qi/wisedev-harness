@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { redactText } from './knowledge.js';
 import { loadManifest } from './manifest.js';
 import { auditSecurityEvent, evaluateCommandPolicy, resolveSecureProjectPath, scanSecrets } from './security.js';
+import { runShellCommand } from './shell.js';
 import { isManifestTrusted } from './trust.js';
 
 const CANDIDATE_DIR = '.agents/evolution-candidates';
@@ -58,13 +58,17 @@ export async function evaluateEvolution(id: string, command: string, cwd = proce
   if (!(await isManifestTrusted(cwd))) throw new Error('Evolution eval commands require a trusted current manifest.');
   const manifest = await loadManifest(cwd);
   const decision = evaluateCommandPolicy(command, manifest);
-  await auditSecurityEvent(cwd, { action: 'evolution-evaluate', candidateId: id, allowed: decision.allowed, reason: decision.reason });
+  await auditSecurityEvent(cwd, { action: 'evolution-evaluate', candidateId: id, allowed: decision.allowed, reason: decision.reason, shell: manifest.policies.hookShell });
   if (!decision.allowed) throw new Error(`Evolution evaluator blocked: ${decision.reason}.`);
   const candidate = await readEvolutionCandidate(id, cwd);
   if (candidate.status !== 'proposed') throw new Error(`Candidate '${id}' is ${candidate.status}; only proposed candidates can be evaluated.`);
   const target = await secureTarget(cwd, candidate.target);
   const scratchDir = resolve(cwd, '.agents/evolution-eval', id); await mkdir(scratchDir, { recursive: true }); const candidateFile = resolve(scratchDir, 'candidate.txt'); await writeFile(candidateFile, candidate.proposedContent);
-  const result = spawnSync('sh', ['-lc', command], { cwd, encoding: 'utf8', timeout: 300_000, env: { ...process.env, WISEDEV_EVOLUTION_ID: id, WISEDEV_CANDIDATE_FILE: candidateFile, WISEDEV_TARGET_FILE: target } });
+  const result = runShellCommand(command, manifest.policies.hookShell, {
+    cwd,
+    timeout: 300_000,
+    env: { ...process.env, WISEDEV_EVOLUTION_ID: id, WISEDEV_CANDIDATE_FILE: candidateFile, WISEDEV_TARGET_FILE: target }
+  });
   const record: EvolutionEval = { at: new Date().toISOString(), command: redactText(command), passed: !result.error && result.status === 0, exitCode: result.status ?? 1, stdout: redactText(String(result.stdout ?? '')).slice(-8000), stderr: redactText(String(result.stderr ?? result.error?.message ?? '')).slice(-8000) };
   candidate.evaluations.push(record); await writeCandidate(cwd, candidate); return record;
 }
