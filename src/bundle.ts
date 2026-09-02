@@ -56,21 +56,28 @@ export async function exportOfflineBundle(output: string, cwd = process.cwd()): 
   return { output: target, skills: Object.keys(bundle.skills).length };
 }
 
-async function materializeSkill(target: string, files: BundleFile[]): Promise<void> {
+async function materializeSkill(target: string, files: BundleFile[], expectedSha256: string): Promise<void> {
   const staging = `${target}.bundle-staging-${process.pid}-${Date.now()}`;
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
-  for (const file of files) {
-    const rel = safeRelative(file.path);
-    const path = resolve(staging, rel);
-    const root = resolve(staging);
-    if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`Bundle entry escapes staging root: ${rel}`);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, Buffer.from(file.contentBase64, 'base64'));
+  try {
+    for (const file of files) {
+      const rel = safeRelative(file.path);
+      const path = resolve(staging, rel);
+      const root = resolve(staging);
+      if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`Bundle entry escapes staging root: ${rel}`);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, Buffer.from(file.contentBase64, 'base64'));
+    }
+    const stagedSha256 = await hashTree(staging);
+    if (stagedSha256 !== expectedSha256) throw new Error(`Offline bundle staged content hash mismatch: expected ${expectedSha256}, got ${stagedSha256}.`);
+    await rm(target, { recursive: true, force: true });
+    await mkdir(dirname(target), { recursive: true });
+    await rename(staging, target);
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true });
+    throw error;
   }
-  await rm(target, { recursive: true, force: true });
-  await mkdir(dirname(target), { recursive: true });
-  await rename(staging, target);
 }
 
 export async function importOfflineBundle(input: string, cwd = process.cwd()): Promise<{ input: string; skills: number }> {
@@ -86,9 +93,7 @@ export async function importOfflineBundle(input: string, cwd = process.cwd()): P
     const target = resolve(cwd, SKILLS_DIR, name);
     const canonicalTarget = relative(cwd, target).split(sep).join('/');
     if (locked.target !== canonicalTarget) throw new Error(`Offline bundle target mismatch for Skill '${name}': expected ${canonicalTarget}, got ${locked.target}.`);
-    await materializeSkill(target, skill.files);
-    const actual = await hashTree(target);
-    if (actual !== locked.contentSha256) throw new Error(`Offline bundle integrity failure for Skill '${name}': expected ${locked.contentSha256}, got ${actual}.`);
+    await materializeSkill(target, skill.files, locked.contentSha256);
   }
   await writeLock(cwd, { ...raw.lock, generatedAt: new Date().toISOString() });
   return { input: source, skills: Object.keys(raw.lock.skills).length };
