@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { HookDef, Manifest, RuntimeName } from './manifest.js';
 import { auditSecurityEvent, evaluateCommandPolicy } from './security.js';
+import { runShellCommand } from './shell.js';
 import { isManifestTrusted } from './trust.js';
 
 const PREFIX = 'wisedev-harness hook-run ';
@@ -45,9 +45,14 @@ export async function runHook(manifest: Manifest, id: string, cwd = process.cwd(
     throw new Error('Manifest is not trusted or changed since trust was granted. Run `wisedev-harness trust` after reviewing .agents/manifest.yaml.');
   }
   const decision = evaluateCommandPolicy(hook.command, manifest);
-  await auditSecurityEvent(cwd, { action: 'hook-run', hookId: id, allowed: decision.allowed, reason: decision.reason });
+  await auditSecurityEvent(cwd, { action: 'hook-run', hookId: id, allowed: decision.allowed, reason: decision.reason, shell: manifest.policies.hookShell });
   if (!decision.allowed) throw new Error(`Hook '${id}' blocked: ${decision.reason}.`);
-  const result = spawnSync('sh', ['-lc', hook.command], { cwd, stdio: 'inherit', timeout: (hook.timeout ?? 60) * 1000, env: { ...process.env, WISEDEV_HOOK_ID: hook.id, WISEDEV_HOOK_EVENT: hook.event } });
+  const result = runShellCommand(hook.command, manifest.policies.hookShell, {
+    cwd,
+    stdio: 'inherit',
+    timeout: (hook.timeout ?? 60) * 1000,
+    env: { ...process.env, WISEDEV_HOOK_ID: hook.id, WISEDEV_HOOK_EVENT: hook.event }
+  });
   if (result.error) throw result.error;
   return result.status ?? 1;
 }
