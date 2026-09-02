@@ -2,27 +2,14 @@ import { appendFile, lstat, mkdir, readFile, realpath, stat } from 'node:fs/prom
 import { dirname, resolve, sep } from 'node:path';
 import type { Manifest } from './manifest.js';
 import { redactText } from './knowledge.js';
+import { explainCommandPolicy } from './enterprise.js';
 
 export interface PolicyDecision { allowed: boolean; reason: string }
 export interface SecretFinding { kind: string; match: string }
 
-function matches(pattern: string, value: string): boolean {
-  if (pattern.startsWith('/') && pattern.endsWith('/') && pattern.length > 2) {
-    try { return new RegExp(pattern.slice(1, -1)).test(value); } catch { return false; }
-  }
-  return value === pattern || value.startsWith(`${pattern} `);
-}
-
 export function evaluateCommandPolicy(command: string, manifest: Manifest): PolicyDecision {
-  const policy = manifest.policies.execution;
-  if (policy.denyShellMetacharacters && /[;&|`$<>\n\r]/.test(command)) return { allowed: false, reason: 'shell metacharacters are denied by policy' };
-  const denied = policy.deny.find(pattern => matches(pattern, command));
-  if (denied) return { allowed: false, reason: `command matches deny rule '${denied}'` };
-  if (policy.allow.length > 0) {
-    const allowed = policy.allow.find(pattern => matches(pattern, command));
-    if (!allowed) return { allowed: false, reason: 'command does not match any allow rule' };
-  }
-  return { allowed: true, reason: 'allowed by execution policy' };
+  const trace = explainCommandPolicy(command, manifest);
+  return { allowed: trace.allowed, reason: trace.reason };
 }
 
 const SECRET_PATTERNS: Array<[string, RegExp]> = [
