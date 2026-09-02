@@ -22,3 +22,7 @@ jobs:
       - run: npm run ci
       - if: matrix.node == 22
         run: npm audit --audit-level=high
+      - if: matrix.node == 22
+        run: npm run release:tag-check -- v$(node -p "require('./package.json').version")
+      - if: matrix.node == 22
+        run: node scripts/build-release-artifacts.mjs
