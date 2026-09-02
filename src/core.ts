@@ -21,7 +21,7 @@ export async function initHarness(cwd = process.cwd(), force = false, options: I
   await writeFile(resolve(cwd, '.agents/.gitignore'), [
     'cache/', 'history/', 'skills/', 'sessions/', 'session-summaries/', 'learning-candidates/',
     'evolution-candidates/', 'evolution-backups/', 'evolution-eval/', 'audit/', 'telemetry/',
-    'profile.yaml', 'telemetry.json', 'session-current.json', 'state.json', 'trust.json', '*.staging-*', ''
+    'profile.yaml', 'telemetry.json', 'mcp-state.json', 'session-current.json', 'state.json', 'trust.json', '*.staging-*', ''
   ].join('\n'), 'utf8');
   const touched = options.applyRuntimeAdapters === false ? [] : await applyAdapters(manifest, cwd);
   await writeFile(resolve(cwd, '.agents/state.json'), JSON.stringify({ schemaVersion: 1, manifestVersion: manifest.version, scope, updatedAt: new Date().toISOString(), runtimes: manifest.runtimes }, null, 2) + '\n');
