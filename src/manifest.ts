@@ -9,6 +9,7 @@ export const HookEventSchema = z.enum(['SessionStart', 'Stop', 'PostToolUse', 'U
 export const ScopeSchema = z.enum(['project', 'user']);
 export const PolicyPackSchema = z.enum(['enterprise-baseline', 'enterprise-strict']);
 export const RecallBackendSchema = z.enum(['lexical', 'json-index']);
+export const ShellModeSchema = z.enum(['auto', 'sh', 'cmd', 'powershell']);
 
 const SkillMeta = {
   name: SafeName,
@@ -87,13 +88,13 @@ export const ManifestSchema = z.object({
     managedBlockId: z.string().min(1).default('wisedev-harness'),
     failOnMissingRequired: z.boolean().default(true),
     requireHookTrust: z.boolean().default(true),
-    hookShell: z.enum(['sh']).default('sh'),
+    hookShell: ShellModeSchema.default('auto'),
     execution: ExecutionPolicySchema,
     policyPacks: z.array(PolicyPackSchema).default([]),
     protectSymlinkEscapes: z.boolean().default(true),
     secretScan: z.boolean().default(true)
   }).default({
-    managedBlockId: 'wisedev-harness', failOnMissingRequired: true, requireHookTrust: true, hookShell: 'sh',
+    managedBlockId: 'wisedev-harness', failOnMissingRequired: true, requireHookTrust: true, hookShell: 'auto',
     execution: { allow: [], deny: [], denyShellMetacharacters: false }, policyPacks: [], protectSymlinkEscapes: true, secretScan: true
   })
 });
@@ -107,6 +108,7 @@ export type RuntimeName = z.infer<typeof RuntimeSchema>;
 export type HarnessScope = z.infer<typeof ScopeSchema>;
 export type PolicyPackName = z.infer<typeof PolicyPackSchema>;
 export type RecallBackendName = z.infer<typeof RecallBackendSchema>;
+export type ShellMode = z.infer<typeof ShellModeSchema>;
 export const MANIFEST_PATH = '.agents/manifest.yaml';
 
 export async function loadManifest(cwd = process.cwd()): Promise<Manifest> {
