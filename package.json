@@ -1,17 +1,52 @@
 {
   "name": "wisedev-harness",
-  "version": "0.6.0",
-  "description": "Vendor-neutral runtime, distribution and verification harness for WiseDev agents",
+  "version": "0.7.0",
+  "description": "Vendor-neutral runtime, distribution, security, knowledge, and controlled-evolution harness for AI coding agents",
   "type": "module",
-  "bin": { "wisedev-harness": "dist/index.js" },
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "wisedev-harness": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run typecheck && npm test && npm run build"
+    "pack:check": "node scripts/verify-package.mjs",
+    "release:tag-check": "node scripts/check-release-tag.mjs",
+    "ci": "npm run typecheck && npm test && npm run build && npm run pack:check",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run ci && npm audit --audit-level=high"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hu-qi/wisedev-harness.git"
+  },
+  "homepage": "https://github.com/hu-qi/wisedev-harness#readme",
+  "bugs": {
+    "url": "https://github.com/hu-qi/wisedev-harness/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "harness",
+    "claude",
+    "codex",
+    "cursor",
+    "skills",
+    "policy",
+    "evals"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "dependencies": {
     "commander": "^14.0.0",
