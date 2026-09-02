@@ -6,10 +6,11 @@ import { exportOfflineBundle, importOfflineBundle } from './bundle.js';
 import { capabilityLines } from './capabilities.js';
 import { checkHarness, hasFailures, initHarness, verifyHarness } from './core.js';
 import { diffHarness, listSnapshots, pullHarness, rollbackHarness } from './distribution.js';
-import { buildHealthSummary, emitTelemetry, explainCommandPolicy, exportAuditBundle, readTelemetryConfig, setTelemetry } from './enterprise.js';
+import { buildHealthSummary, emitTelemetry, explainCommandPolicy, exportAuditBundle, policyPackLines, readTelemetryConfig, setTelemetry } from './enterprise.js';
 import { applyEvolution, approveEvolution, evaluateEvolution, evolutionDiff, proposeEvolution, readEvolutionCandidate, rollbackEvolution } from './evolution.js';
 import { injectHooks, listHooks, removeHooks, runHook } from './hooks.js';
 import { addLearning, endSession, listLearningCandidates, promoteLearning, recallLearnings, recordSessionEvent, startSession, type SessionEventType } from './knowledge.js';
+import { listMcp, reconcileMcp } from './mcp.js';
 import { loadManifest, ScopeSchema, type HarnessScope } from './manifest.js';
 import { evaluateCommandPolicy, scanFileSecrets } from './security.js';
 import { loadEffectiveManifest, loadManifestForScope, loadProfile, saveProfile, scopeRoot, scopeStatus, userScopeRoot } from './team.js';
@@ -135,6 +136,22 @@ program.command('capabilities').description('Show supported runtime adapter capa
   for (const line of capabilityLines()) console.log(line);
 });
 
+const mcp = program.command('mcp').description('Manage trusted project MCP declarations across Claude, Codex, and Cursor');
+mcp.command('list').description('List vendor-neutral MCP declarations from the project manifest').action(async () => {
+  requireProjectScope();
+  for (const line of listMcp(await loadManifest())) console.log(line);
+});
+mcp.command('inject').description('Reconcile trusted MCP declarations into enabled runtime configuration files').action(async () => {
+  requireProjectScope();
+  const manifest = await loadManifest();
+  for (const file of await reconcileMcp(manifest)) console.log(`Managed ${file}`);
+});
+mcp.command('remove').description('Remove only WiseDev-managed MCP servers while preserving unmanaged configuration').action(async () => {
+  requireProjectScope();
+  const manifest = await loadManifest();
+  for (const file of await reconcileMcp(manifest, process.cwd(), true)) console.log(`Cleaned ${file}`);
+});
+
 program.command('health').description('Summarize local Harness friction, security and learning health for the selected scope').option('--json', 'print machine-readable JSON').action(async opts => {
   const root = scopeRoot(selectedScope());
   const health = await buildHealthSummary(root);
@@ -166,11 +183,11 @@ telemetry.command('disable').action(async () => {
   console.log('DISABLED');
 });
 
-program.command('trust').description('Trust the exact current project manifest fingerprint for command hooks/evals').action(async () => {
+program.command('trust').description('Trust the exact current project manifest fingerprint for command hooks/evals/MCP').action(async () => {
   requireProjectScope();
   console.log(`Trusted manifest ${(await trustManifest()).manifestSha256}`);
 });
-program.command('untrust').description('Revoke local project hook/eval execution trust').action(async () => {
+program.command('untrust').description('Revoke local project Hook/eval/MCP execution trust').action(async () => {
   requireProjectScope();
   await revokeTrust();
   console.log('Manifest execution trust revoked.');
@@ -183,6 +200,9 @@ program.command('trust-status').description('Show whether the exact current proj
 });
 
 const security = program.command('security').description('Inspect project execution policy and secret-scan files');
+security.command('packs').description('List built-in monotonic enterprise policy packs').action(() => {
+  for (const line of policyPackLines()) console.log(line);
+});
 security.command('policy <command...>').description('Evaluate a shell command against the project execution policy without running it').action(async command => {
   requireProjectScope();
   const value = command.join(' ');
