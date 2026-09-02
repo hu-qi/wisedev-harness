@@ -8,10 +8,11 @@ import { applyEvolution, approveEvolution, evaluateEvolution, evolutionDiff, pro
 import { injectHooks, listHooks, removeHooks, runHook } from './hooks.js';
 import { addLearning, endSession, listLearningCandidates, promoteLearning, recallLearnings, recordSessionEvent, startSession, type SessionEventType } from './knowledge.js';
 import { loadManifest } from './manifest.js';
+import { evaluateCommandPolicy, scanFileSecrets } from './security.js';
 import { isManifestTrusted, revokeTrust, trustManifest } from './trust.js';
 
 const program = new Command();
-program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.5.0');
+program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.6.0');
 
 function print(checks: Awaited<ReturnType<typeof checkHarness>>) {
   for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}  ${c.detail}`);
@@ -29,6 +30,20 @@ program.command('rollback [snapshot]').description('Restore git skills from a pr
 program.command('trust').description('Trust the exact current manifest fingerprint for command hooks/evals').action(async () => console.log(`Trusted manifest ${(await trustManifest()).manifestSha256}`));
 program.command('untrust').description('Revoke local hook/eval execution trust').action(async () => { await revokeTrust(); console.log('Manifest execution trust revoked.'); });
 program.command('trust-status').description('Show whether the exact current manifest is trusted').action(async () => { const trusted = await isManifestTrusted(); console.log(trusted ? 'TRUSTED' : 'UNTRUSTED'); if (!trusted) process.exitCode = 3; });
+
+const security = program.command('security').description('Inspect execution policy and secret-scan files');
+security.command('policy <command...>').description('Evaluate a shell command against the current manifest execution policy without running it').action(async command => {
+  const value = command.join(' ');
+  const decision = evaluateCommandPolicy(value, await loadManifest());
+  console.log(`${decision.allowed ? 'ALLOW' : 'DENY'}  ${value}\n${decision.reason}`);
+  if (!decision.allowed) process.exitCode = 6;
+});
+security.command('scan <path>').description('Scan one text file for high-confidence credential patterns').action(async path => {
+  const findings = await scanFileSecrets(path);
+  if (findings.length === 0) { console.log(`PASS  no high-confidence secrets found in ${path}`); return; }
+  for (const finding of findings) console.log(`SECRET  ${finding.kind}  ${finding.match}`);
+  process.exitCode = 5;
+});
 
 const hooks = program.command('hooks').description('Manage runtime hook integration');
 hooks.command('inject').description('Reconcile WiseDev hooks into enabled runtime hook files').action(async () => { for (const file of await injectHooks(await loadManifest())) console.log(`Managed ${file}`); console.log('Note: Codex may require explicit hook trust in its own UI in addition to WiseDev manifest trust.'); });
