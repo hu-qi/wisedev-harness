@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile, copyFile } from 'node:fs/promises';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Manifest, Skill } from './manifest.js';
 
 export interface LockedGitSkill {
@@ -42,7 +42,9 @@ function assertSafeRelativePath(path: string): void {
 
 function assertGitUrl(url: string): void {
   const parsed = new URL(url);
-  if (parsed.protocol !== 'https:') throw new Error(`Only https git sources are supported in v0.2: ${url}`);
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'file:' && process.env.WISEDEV_HARNESS_ALLOW_FILE_GIT === '1') return;
+  throw new Error(`Unsupported git source protocol '${parsed.protocol}'. HTTPS is required.`);
 }
 
 async function exists(path: string): Promise<boolean> {
