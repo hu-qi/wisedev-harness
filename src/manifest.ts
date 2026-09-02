@@ -8,6 +8,7 @@ export const RuntimeSchema = z.enum(['claude', 'codex', 'cursor']);
 export const HookEventSchema = z.enum(['SessionStart', 'Stop', 'PostToolUse', 'UserPromptSubmit']);
 export const ScopeSchema = z.enum(['project', 'user']);
 export const PolicyPackSchema = z.enum(['enterprise-baseline', 'enterprise-strict']);
+export const RecallBackendSchema = z.enum(['lexical', 'json-index']);
 
 const SkillMeta = {
   name: SafeName,
@@ -65,6 +66,11 @@ const ExecutionPolicySchema = z.object({
   denyShellMetacharacters: z.boolean().default(false)
 }).default({ allow: [], deny: [], denyShellMetacharacters: false });
 
+const RecallSchema = z.object({
+  backend: RecallBackendSchema.default('lexical'),
+  indexPath: z.string().min(1).default('.agents/recall-index.json')
+}).default({ backend: 'lexical', indexPath: '.agents/recall-index.json' });
+
 export const ManifestSchema = z.object({
   version: z.literal(1),
   scope: ScopeSchema.default('project'),
@@ -76,6 +82,7 @@ export const ManifestSchema = z.object({
   rules: z.array(z.object({ path: z.string().min(1), required: z.boolean().default(true) })).default([]),
   hooks: z.array(HookSchema).default([]),
   mcpServers: z.array(McpServerSchema).default([]),
+  recall: RecallSchema,
   policies: z.object({
     managedBlockId: z.string().min(1).default('wisedev-harness'),
     failOnMissingRequired: z.boolean().default(true),
@@ -99,6 +106,7 @@ export type McpServer = z.infer<typeof McpServerSchema>;
 export type RuntimeName = z.infer<typeof RuntimeSchema>;
 export type HarnessScope = z.infer<typeof ScopeSchema>;
 export type PolicyPackName = z.infer<typeof PolicyPackSchema>;
+export type RecallBackendName = z.infer<typeof RecallBackendSchema>;
 export const MANIFEST_PATH = '.agents/manifest.yaml';
 
 export async function loadManifest(cwd = process.cwd()): Promise<Manifest> {
