@@ -11,8 +11,9 @@ import { loadManifest } from './manifest.js';
 import { evaluateCommandPolicy, scanFileSecrets } from './security.js';
 import { isManifestTrusted, revokeTrust, trustManifest } from './trust.js';
 
+const packageVersion = (JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 const program = new Command();
-program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.6.0');
+program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version(packageVersion);
 
 function print(checks: Awaited<ReturnType<typeof checkHarness>>) {
   for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}  ${c.detail}`);

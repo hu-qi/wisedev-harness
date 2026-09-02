@@ -42,7 +42,7 @@
 - [x] Stale-baseline rejection
 - [x] Deterministic rollback, including newly-created targets
 
-## v0.6 — Security hardening ✅ implementation / CI pending merge
+## v0.6 — Security hardening ✅
 
 - [x] Shared command allow/deny policy for Hooks and Evolution evaluators
 - [x] Optional shell-metacharacter deny mode
@@ -53,17 +53,19 @@
 - [x] `security policy` and `security scan` inspection commands
 - [x] Security regression tests
 
-## v0.7 — Packaging and supply chain
+## v0.7 — Packaging and supply chain ✅ implementation / CI pending merge
 
-- [ ] Deterministic `package-lock.json`
-- [ ] `npm ci`-based CI and package smoke tests
-- [ ] `npm pack` artifact verification
-- [ ] `SECURITY.md`
-- [ ] Release workflow with immutable tag/version checks
-- [ ] npm provenance-ready publish workflow
-- [ ] CycloneDX/SPDX SBOM generation
-- [ ] Dependency review and vulnerability audit gates
-- [ ] Release checksums and build metadata
+- [x] Deterministic `package-lock.json`
+- [x] `npm ci`-based CI with lockfile cache
+- [x] `npm pack` package-content smoke verification
+- [x] High-severity `npm audit` gate
+- [x] GitHub dependency-review gate
+- [x] `SECURITY.md`
+- [x] Immutable tag/package-version check
+- [x] CycloneDX SBOM generation
+- [x] SHA-256 release checksum and machine-readable release metadata
+- [x] GitHub release artifact workflow
+- [x] npm provenance-ready publication of the exact verified tarball
 
 ## v0.8 — Scope and team distribution
 

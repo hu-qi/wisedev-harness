@@ -10,7 +10,7 @@ It is designed to make agent behavior reproducible across projects and coding-ag
 - **wisedev-team** — multi-role orchestration and reviewer-gated workflows.
 - **wisedev-harness** — installation, manifest resolution, runtime adaptation, verification, policy enforcement, distribution, knowledge, and governed harness evolution.
 
-## Current milestone: v0.6 security hardening
+## Current milestone: v0.7 packaging and supply-chain baseline
 
 Implemented:
 
@@ -21,18 +21,24 @@ Implemented:
 - Reproducible HTTPS git Skill sources with explicit refs, lockfile pinning, content hashes, cache, update/diff, snapshots, and rollback.
 - Declarative cross-runtime hooks with exact-manifest trust before command execution.
 - Execution allow/deny policy shared by Hooks and Evolution evaluators.
-- High-confidence secret scanning for private keys, common cloud/API tokens, bearer tokens, and credential assignments.
-- Realpath/symlink project-boundary protection for evolution writes.
-- Local security audit evidence under `.agents/audit/`, ignored by Git by default.
+- High-confidence secret scanning and realpath/symlink project-boundary protection.
 - Privacy-redacted sessions, deterministic friction scoring, reviewed learning promotion, and explainable recall.
 - Governed Harness evolution: `propose → evaluate → approve → apply → rollback`, with stale-baseline protection.
+- Deterministic npm dependency installation through committed `package-lock.json` + `npm ci`.
+- npm package-content smoke testing that rejects accidental `src/`, `test/`, `.github/`, or `.agents/` publication.
+- High-severity `npm audit` and GitHub dependency-review gates.
+- Tag/package-version parity enforcement.
+- Release artifact generation with CycloneDX SBOM, SHA-256 checksum, and machine-readable release metadata.
+- Tag-triggered GitHub release workflow and npm provenance-ready publication of the exact verified tarball.
 - Unit and end-to-end lifecycle/security tests on Node 20 and 22.
 
 ## Development usage
 
 ```bash
-npm install
+npm ci
 npm run build
+npm test
+npm run pack:check
 node dist/index.js init
 node dist/index.js check
 node dist/index.js verify
@@ -48,7 +54,7 @@ node dist/index.js recall checkout regression
 node dist/index.js evolve --help
 ```
 
-After package publication the intended interface is:
+After npm publication:
 
 ```bash
 npm install -g wisedev-harness
@@ -114,6 +120,17 @@ session evidence
 
 Evolution writes are restricted to the project root, protected against symlink escape, secret-scanned before approval, and rejected if the target changed after proposal.
 
+## Release integrity
+
+A release tag must exactly match `v<package.version>`. Release CI runs `npm ci`, the full test/build/package suite, high-severity vulnerability auditing, and then creates:
+
+- the exact npm `.tgz` artifact;
+- `<artifact>.sha256`;
+- `sbom.cdx.json` (CycloneDX);
+- `release.json` containing version, commit/ref, runtime versions, artifact name, and checksum.
+
+Those exact files are attached to the GitHub Release. If `NPM_TOKEN` is configured, the same verified `.tgz` is published to npm with provenance enabled. See [SECURITY.md](SECURITY.md) for the security model and reporting policy.
+
 ## Safety model
 
 - Never overwrite unmanaged user content.
@@ -127,6 +144,7 @@ Evolution writes are restricted to the project root, protected against symlink e
 - Harness evolution cannot escape the project root through lexical paths or symlinks.
 - High-confidence secrets block evolution approval.
 - Raw session, trust, cache, audit, evaluation, and backup state are local and ignored by Git by default.
+- Dependency and package artifacts are lockfile/release-gated before publication.
 - Vendor-specific translation stays behind adapters.
 
 See [Architecture](docs/architecture.md) and [Roadmap](ROADMAP.md).

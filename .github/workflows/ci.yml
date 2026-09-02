@@ -16,5 +16,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
       - run: npm run ci
+      - if: matrix.node == 22
+        run: npm audit --audit-level=high
+      - if: matrix.node == 22
+        run: npm run release:tag-check -- v$(node -p "require('./package.json').version")
+      - if: matrix.node == 22
+        run: node scripts/build-release-artifacts.mjs

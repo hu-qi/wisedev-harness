@@ -1,0 +1,47 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run release:tag-check -- "$GITHUB_REF_NAME"
+      - run: npm run ci
+      - run: npm audit --audit-level=high
+      - run: node scripts/build-release-artifacts.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: .release/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish exact verified tarball to npm with provenance
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN is not configured; skipping npm publication."
+            exit 0
+          fi
+          export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          npm publish .release/*.tgz --provenance --access public
+      - name: Create immutable GitHub release from verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" .release/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
