@@ -1,21 +1,36 @@
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
-import { mkdir, readFile, readdir, stat, writeFile, appendFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, appendFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import type { Manifest } from './manifest.js';
+import type { Manifest, PolicyPackName } from './manifest.js';
 import { MANIFEST_PATH } from './manifest.js';
 import { LOCK_PATH } from './distribution.js';
 import { redactText } from './knowledge.js';
 
 const gzipAsync = promisify(gzip);
 
+const POLICY_PACKS: Record<PolicyPackName, { deny: string[]; denyShellMetacharacters?: boolean; description: string }> = {
+  'enterprise-baseline': {
+    description: 'Blocks common publish, destructive-delete and force-push commands.',
+    deny: ['npm publish', 'git push --force', 'git push -f', 'rm -rf']
+  },
+  'enterprise-strict': {
+    description: 'Adds outbound shell/network launchers and shell metacharacter denial for tightly controlled environments.',
+    deny: ['npm publish', 'git push --force', 'git push -f', 'rm -rf', 'curl', 'wget', 'ssh', 'scp'],
+    denyShellMetacharacters: true
+  }
+};
+
 export interface PolicyTrace {
   command: string;
-  shellMetacharacters: { enabled: boolean; matched: boolean };
+  policyPacks: PolicyPackName[];
+  shellMetacharacters: { enabled: boolean; matched: boolean; sources: string[] };
   denyMatches: string[];
+  denySources: Record<string, string[]>;
   allowMatches: string[];
   allowListEnabled: boolean;
+  conflicts: string[];
   allowed: boolean;
   reason: string;
 }
@@ -27,26 +42,57 @@ function matches(pattern: string, value: string): boolean {
   return value === pattern || value.startsWith(`${pattern} `);
 }
 
+function effectiveExecutionPolicy(manifest: Manifest) {
+  const base = manifest.policies.execution;
+  const denySources = new Map<string, string[]>();
+  for (const pattern of base.deny) denySources.set(pattern, ['manifest']);
+  const shellSources = base.denyShellMetacharacters ? ['manifest'] : [];
+  for (const packName of manifest.policies.policyPacks) {
+    const pack = POLICY_PACKS[packName];
+    for (const pattern of pack.deny) denySources.set(pattern, [...new Set([...(denySources.get(pattern) ?? []), `pack:${packName}`])]);
+    if (pack.denyShellMetacharacters) shellSources.push(`pack:${packName}`);
+  }
+  return {
+    allow: base.allow,
+    deny: [...denySources.keys()],
+    denySources: Object.fromEntries(denySources),
+    denyShellMetacharacters: shellSources.length > 0,
+    shellSources: [...new Set(shellSources)]
+  };
+}
+
+export function policyPackLines(): string[] {
+  return (Object.entries(POLICY_PACKS) as Array<[PolicyPackName, (typeof POLICY_PACKS)[PolicyPackName]]>)
+    .map(([name, pack]) => `${name}\t${pack.description}\tdeny=${pack.deny.join(',')}\tdenyShellMetacharacters=${Boolean(pack.denyShellMetacharacters)}`);
+}
+
 export function explainCommandPolicy(command: string, manifest: Manifest): PolicyTrace {
-  const policy = manifest.policies.execution;
+  const policy = effectiveExecutionPolicy(manifest);
   const shellMatched = /[;&|`$<>\n\r]/.test(command);
   const denyMatches = policy.deny.filter(pattern => matches(pattern, command));
   const allowMatches = policy.allow.filter(pattern => matches(pattern, command));
+  const conflicts = denyMatches.length > 0 && allowMatches.length > 0
+    ? [`deny wins over allow: deny=[${denyMatches.join(', ')}] allow=[${allowMatches.join(', ')}]`]
+    : [];
   let allowed = true;
   let reason = 'allowed by execution policy';
   if (policy.denyShellMetacharacters && shellMatched) {
-    allowed = false; reason = 'shell metacharacters are denied by policy';
+    allowed = false; reason = `shell metacharacters are denied by ${policy.shellSources.join(', ')}`;
   } else if (denyMatches.length > 0) {
-    allowed = false; reason = `command matches deny rule '${denyMatches[0]}'`;
+    const first = denyMatches[0];
+    allowed = false; reason = `command matches deny rule '${first}' from ${policy.denySources[first].join(', ')}`;
   } else if (policy.allow.length > 0 && allowMatches.length === 0) {
     allowed = false; reason = 'command does not match any allow rule';
   }
   return {
     command: redactText(command),
-    shellMetacharacters: { enabled: policy.denyShellMetacharacters, matched: shellMatched },
+    policyPacks: manifest.policies.policyPacks,
+    shellMetacharacters: { enabled: policy.denyShellMetacharacters, matched: shellMatched, sources: policy.shellSources },
     denyMatches,
+    denySources: Object.fromEntries(denyMatches.map(pattern => [pattern, policy.denySources[pattern]])),
     allowMatches,
     allowListEnabled: policy.allow.length > 0,
+    conflicts,
     allowed,
     reason
   };
