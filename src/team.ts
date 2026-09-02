@@ -23,9 +23,19 @@ export async function loadProfile(root: string): Promise<SelectionProfile> {
   catch (error: any) { if (error?.code === 'ENOENT') return ProfileSchema.parse({}); throw error; }
 }
 
+async function ensureProfileIgnored(root: string): Promise<void> {
+  const path = resolve(root, '.agents/.gitignore');
+  let lines: string[] = [];
+  try { lines = (await readFile(path, 'utf8')).split('\n').filter(Boolean); }
+  catch (error: any) { if (error?.code !== 'ENOENT') throw error; }
+  if (!lines.includes('profile.yaml')) lines.push('profile.yaml');
+  await writeFile(path, `${lines.join('\n')}\n`, 'utf8');
+}
+
 export async function saveProfile(root: string, profile: SelectionProfile): Promise<void> {
   const value = ProfileSchema.parse(profile);
   await mkdir(resolve(root, '.agents'), { recursive: true });
+  await ensureProfileIgnored(root);
   await writeFile(profilePath(root), YAML.stringify(value), 'utf8');
 }
 
@@ -68,7 +78,7 @@ export async function loadEffectiveManifest(cwd = process.cwd(), home = homedir(
     let user;
     try { user = await loadUserManifest(home); }
     catch (error: any) {
-      if (error?.code === 'ENOENT') throw new Error('Project requests inheritUserScope but no user-scope manifest exists. Run `wisedev-harness init --scope user`.');
+      if (error?.code === 'ENOENT') throw new Error('Project requests inheritUserScope but no user-scope manifest exists. Run `wisedev-harness --scope user init`.');
       throw error;
     }
     const userProfile = await loadProfile(user.root);
@@ -90,7 +100,7 @@ export async function loadEffectiveManifest(cwd = process.cwd(), home = homedir(
   }
 
   const sources = [...sourceMap.entries()].map(([name, item]) => {
-    entries.push({ kind: 'source', name, origin: item.origin, selected: true, reason: item.origin === 'project' ? 'project source overrides same-name user source' : 'inherited user source' });
+    entries.push({ kind: 'source', name, origin: item.origin, selected: true, reason: item.origin === 'project' ? 'project source takes precedence for this name' : 'inherited user source' });
     return item.value;
   });
   const skills: Skill[] = [];
