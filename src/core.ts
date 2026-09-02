@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { applyAdapters } from './adapters.js';
+import { checkDistributionIntegrity } from './integrity.js';
 import { defaultManifest, loadManifest, MANIFEST_PATH, serializeManifest, type Manifest } from './manifest.js';
 
 export interface Check { name: string; ok: boolean; detail: string }
@@ -40,6 +41,7 @@ export async function checkHarness(cwd = process.cwd()): Promise<Check[]> {
       const path = resolve(cwd, rule.path); const ok = await exists(path);
       out.push({ name: `rule:${rule.path}`, ok: ok || !rule.required, detail: ok ? path : `missing ${path}` });
     }
+    out.push(...await checkDistributionIntegrity(manifest, cwd));
   } catch (error: any) { out.push({ name: 'manifest', ok: false, detail: error?.message ?? String(error) }); }
   return out;
 }
