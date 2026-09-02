@@ -12,7 +12,7 @@
 ## M1 — Multi-agent distribution (v0.2)
 
 - [x] Cursor adapter with `.mdc` rule rendering.
-- [ ] OpenCode adapter and instruction activation.
+- [x] OpenCode adapter and instruction activation.
 - [x] Machine-readable `plan` output shared by dry-run/sync behavior.
 - [x] Linux/macOS/Windows integration matrix.
 - [ ] Remote Git sources with pinned refs and lockfile.

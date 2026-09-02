@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { checkProject, initProject, planProject, syncProject, verifyProject } from '../dist/index.js';
@@ -80,6 +80,52 @@ test('Cursor adapter writes skills and valid mdc rules', async () => {
     assert.match(rule, /Project rules/);
     assert.equal(await doesNotExist(path.join(root, '.cursor/rules/wisedev/project.md')), true);
     assert.equal((await verifyProject(root)).ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenCode adapter activates and removes only the WiseDev instruction glob', async () => {
+  const root = await fixture(['opencode']);
+  try {
+    await writeFile(path.join(root, 'opencode.json'), `${JSON.stringify({ theme: 'dark', instructions: ['README.md'], mcp: { demo: { enabled: true } } }, null, 2)}\n`);
+
+    const first = await syncProject(root);
+    assert.equal(first.diagnostics.some((item) => item.level === 'error'), false, JSON.stringify(first.diagnostics, null, 2));
+    assert.match(await readFile(path.join(root, '.opencode/skills/demo/SKILL.md'), 'utf8'), /Demo Skill/);
+    assert.match(await readFile(path.join(root, '.opencode/rules/wisedev/project.md'), 'utf8'), /Project rules/);
+
+    const config = JSON.parse(await readFile(path.join(root, 'opencode.json'), 'utf8'));
+    assert.equal(config.theme, 'dark');
+    assert.deepEqual(config.mcp, { demo: { enabled: true } });
+    assert.deepEqual(config.instructions, ['README.md', '.opencode/rules/wisedev/**/*.md']);
+    assert.equal((await verifyProject(root)).ok, true);
+
+    await unlink(path.join(root, '.agents/rules/project.md'));
+    const second = await syncProject(root);
+    assert.equal(second.diagnostics.some((item) => item.level === 'error'), false, JSON.stringify(second.diagnostics, null, 2));
+    assert.equal(await doesNotExist(path.join(root, '.opencode/rules/wisedev/project.md')), true);
+
+    const afterRemoval = JSON.parse(await readFile(path.join(root, 'opencode.json'), 'utf8'));
+    assert.equal(afterRemoval.theme, 'dark');
+    assert.deepEqual(afterRemoval.mcp, { demo: { enabled: true } });
+    assert.deepEqual(afterRemoval.instructions, ['README.md']);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('OpenCode invalid config fails closed before managed target writes', async () => {
+  const root = await fixture(['opencode']);
+  try {
+    await writeFile(path.join(root, 'opencode.json'), '{ broken json');
+    const result = await syncProject(root);
+    assert.equal(result.changed, false);
+    assert.equal(result.diagnostics.some((item) => item.code === 'OPENCODE_CONFIG_INVALID'), true);
+    assert.equal(await doesNotExist(path.join(root, '.opencode/skills/demo/SKILL.md')), true);
+    assert.equal(await doesNotExist(path.join(root, '.opencode/rules/wisedev/project.md')), true);
+    assert.equal(await doesNotExist(path.join(root, '.agents/state.json')), true);
+    assert.equal(await readFile(path.join(root, 'opencode.json'), 'utf8'), '{ broken json');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -2,7 +2,16 @@
 
 All notable changes to WiseDev Harness will be documented here.
 
-## 0.2.0-alpha.1 - Unreleased
+## 0.2.0-alpha.2 - Unreleased
+
+### Added
+
+- OpenCode project skills at `.opencode/skills/**`.
+- OpenCode managed rules at `.opencode/rules/wisedev/**/*.md`.
+- Surgical `opencode.json` instructions activation/removal preserving unrelated keys and instruction entries.
+- Fail-closed handling for malformed OpenCode configuration.
+
+## 0.2.0-alpha.1 - 2026-09-02
 
 ### Added
 

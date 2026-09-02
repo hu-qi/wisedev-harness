@@ -3,8 +3,9 @@ import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { HARNESS_GITIGNORE_PATH, MANIFEST_PATH } from './constants.js';
 import { HarnessError } from './errors.js';
-import { agentDisplayName, claudeRuleTarget, cursorRuleContent, cursorRuleTarget, skillTarget } from './adapters.js';
+import { agentDisplayName, claudeRuleTarget, cursorRuleContent, cursorRuleTarget, opencodeRuleTarget, skillTarget } from './adapters.js';
 import { createDefaultManifest, diagnoseManifestSources, loadManifest, serializeManifest } from './manifest.js';
+import { OPENCODE_CONFIG_PATH, planOpenCodeInstructions, verifyOpenCodeInstructions } from './opencode.js';
 import { buildCodexRulesBlock, codexBlockHash, extractCodexRulesBlock, replaceCodexRulesBlock, type RuleSource } from './rules.js';
 import type { AgentId, Diagnostic, HarnessManifest, HarnessState, ManagedEntry, Operation, SyncResult, VerifyResult } from './types.js';
 import { exists, listSourceFiles, readState, readUtf8, removeFile, resolveInside, sha256, writeAtomic, writeState } from './utils.js';
@@ -15,6 +16,12 @@ interface ExpectedEntry {
   content: string;
   hash: string;
   source?: string;
+}
+
+interface ExpectedResult {
+  entries: ExpectedEntry[];
+  diagnostics: Diagnostic[];
+  opencodeRulesPresent: boolean;
 }
 
 interface PendingChange {
@@ -111,7 +118,7 @@ export async function checkProject(root: string): Promise<Diagnostic[]> {
   return diagnostics;
 }
 
-async function collectExpected(root: string, manifest: HarnessManifest): Promise<{ entries: ExpectedEntry[]; diagnostics: Diagnostic[] }> {
+async function collectExpected(root: string, manifest: HarnessManifest): Promise<ExpectedResult> {
   const diagnostics: Diagnostic[] = [];
   const byKey = new Map<string, ExpectedEntry>();
   const rules: RuleSource[] = [];
@@ -152,6 +159,10 @@ async function collectExpected(root: string, manifest: HarnessManifest): Promise
           const content = cursorRuleContent(source, file.content);
           add({ kind: 'file', path: target, content, hash: sha256(content), source });
         }
+        if (manifest.agents.includes('opencode')) {
+          const target = opencodeRuleTarget(file.relativePath);
+          add({ kind: 'file', path: target, content: file.content, hash: sha256(file.content), source });
+        }
       }
     }
   } catch (error) {
@@ -165,7 +176,11 @@ async function collectExpected(root: string, manifest: HarnessManifest): Promise
     }
   }
 
-  return { entries: [...byKey.values()].sort((a, b) => `${a.kind}:${a.path}`.localeCompare(`${b.kind}:${b.path}`)), diagnostics };
+  return {
+    entries: [...byKey.values()].sort((a, b) => `${a.kind}:${a.path}`.localeCompare(`${b.kind}:${b.path}`)),
+    diagnostics,
+    opencodeRulesPresent: manifest.agents.includes('opencode') && rules.length > 0,
+  };
 }
 
 async function fileHash(target: string): Promise<string | null> {
@@ -285,6 +300,18 @@ export async function syncProject(root: string, options: SyncOptions = {}): Prom
     }
   }
 
+  const previouslyManagedOpenCodeRules = (state?.managed ?? []).some((entry) => entry.kind === 'file' && entry.path.startsWith('.opencode/rules/wisedev/'));
+  if (expectedResult.opencodeRulesPresent || previouslyManagedOpenCodeRules) {
+    const configPlan = await planOpenCodeInstructions(projectRoot, expectedResult.opencodeRulesPresent);
+    diagnostics.push(...configPlan.diagnostics);
+    if (configPlan.changed && configPlan.content !== undefined) {
+      changes.push({ type: 'write', path: OPENCODE_CONFIG_PATH, absolutePath: resolveInside(projectRoot, OPENCODE_CONFIG_PATH), content: configPlan.content, reason: expectedResult.opencodeRulesPresent ? 'activate WiseDev OpenCode rules' : 'remove stale WiseDev OpenCode rules activation' });
+      operations.push({ type: 'write', path: OPENCODE_CONFIG_PATH, reason: expectedResult.opencodeRulesPresent ? 'activate WiseDev OpenCode rules' : 'remove stale WiseDev OpenCode rules activation' });
+    } else if (!hasErrors(configPlan.diagnostics)) {
+      operations.push({ type: 'noop', path: OPENCODE_CONFIG_PATH, reason: expectedResult.opencodeRulesPresent ? 'OpenCode rules already activated' : 'OpenCode rules activation already absent' });
+    }
+  }
+
   if (hasErrors(diagnostics)) return { operations, diagnostics, changed: false };
   if (options.dryRun) {
     diagnostics.push({ level: 'info', code: 'DRY_RUN', message: `Dry run complete; ${changes.length} change(s) would be applied` });
@@ -374,6 +401,10 @@ export async function verifyProject(root: string): Promise<VerifyResult> {
     } catch (error) {
       diagnostics.push(diagnosticFromError(error));
     }
+  }
+
+  if (expectedResult.opencodeRulesPresent) {
+    diagnostics.push(...await verifyOpenCodeInstructions(projectRoot));
   }
 
   for (const tracked of state.managed) {

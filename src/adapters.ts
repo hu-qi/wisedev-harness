@@ -9,6 +9,8 @@ export function skillTarget(agent: AgentId, relativePath: string): string {
       return `.codex/skills/${relativePath}`;
     case 'cursor':
       return `.cursor/skills/${relativePath}`;
+    case 'opencode':
+      return `.opencode/skills/${relativePath}`;
   }
 }
 
@@ -27,9 +29,16 @@ export function cursorRuleContent(source: string, content: string): string {
   return `---\ndescription: ${description}\nalwaysApply: true\n---\n\n${content.trim()}\n`;
 }
 
+export function opencodeRuleTarget(relativePath: string): string {
+  const parsed = path.posix.parse(relativePath.replaceAll('\\', '/'));
+  const fileName = `${parsed.name || 'rule'}.md`;
+  return `.opencode/rules/wisedev/${parsed.dir ? `${parsed.dir}/` : ''}${fileName}`;
+}
+
 export function agentDisplayName(agent: string): string {
   if (agent === 'claude') return 'Claude Code';
   if (agent === 'codex') return 'Codex';
   if (agent === 'cursor') return 'Cursor';
+  if (agent === 'opencode') return 'OpenCode';
   return agent;
 }
