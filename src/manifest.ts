@@ -73,11 +73,15 @@ export async function loadManifest(root: string): Promise<LoadedManifest> {
   return { manifest: validateManifest(parsed), raw, hash: sha256(raw) };
 }
 
-export function createDefaultManifest(projectName: string, agents: AgentId[]): HarnessManifest {
+export function createDefaultManifest(projectName: string, agents: readonly string[]): HarnessManifest {
+  const unsupported = agents.filter((agent) => !(SUPPORTED_AGENTS as readonly string[]).includes(agent));
+  if (unsupported.length > 0) {
+    throw new HarnessError('UNSUPPORTED_AGENT', `Unsupported agent(s): ${unsupported.join(', ')}`);
+  }
   return {
     version: 1,
     project: { name: projectName },
-    agents,
+    agents: [...agents] as AgentId[],
     resources: {
       skills: ['.agents/skills'],
       rules: ['.agents/rules'],

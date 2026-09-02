@@ -15,8 +15,8 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
-function parseAgents(raw: string | undefined): AgentId[] | undefined {
-  if (!raw) return undefined;
+function parseAgents(raw: string | undefined): AgentId[] {
+  if (!raw) return [];
   const agents = [...new Set(raw.split(',').map((item) => item.trim()).filter(Boolean))];
   const unsupported = agents.filter((agent) => !(SUPPORTED_AGENTS as readonly string[]).includes(agent));
   if (unsupported.length > 0) throw new Error(`Unsupported agent(s): ${unsupported.join(', ')}`);
@@ -52,7 +52,8 @@ async function main(): Promise<void> {
   try {
     switch (command) {
       case 'init': {
-        const result = await initProject(root, { force: hasFlag(args, '--force'), ...(parseAgents(optionValue(args, '--agent')) ? { agents: parseAgents(optionValue(args, '--agent')) } : {}) });
+        const agents = parseAgents(optionValue(args, '--agent'));
+        const result = await initProject(root, { force: hasFlag(args, '--force'), ...(agents.length > 0 ? { agents } : {}) });
         printDiagnostics(result.diagnostics);
         printOperations(result.operations);
         if (result.diagnostics.some((item) => item.level === 'error')) process.exitCode = 1;

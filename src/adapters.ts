@@ -13,6 +13,8 @@ export function claudeRuleTarget(relativePath: string): string {
   return `.claude/rules/wisedev/${relativePath}`;
 }
 
-export function agentDisplayName(agent: AgentId): string {
-  return agent === 'claude' ? 'Claude Code' : 'Codex';
+export function agentDisplayName(agent: string): string {
+  if (agent === 'claude') return 'Claude Code';
+  if (agent === 'codex') return 'Codex';
+  return agent;
 }
