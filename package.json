@@ -1,6 +1,6 @@
 {
   "name": "wisedev-harness",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.1",
   "description": "Runtime, verification, distribution and evolution harness for AI-assisted software engineering",
   "type": "module",
   "bin": {
@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && node --test",
     "prepack": "npm run test"
   },
   "engines": {
@@ -27,6 +27,7 @@
     "harness",
     "claude",
     "codex",
+    "cursor",
     "skills"
   ],
   "license": "MIT",
