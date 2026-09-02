@@ -167,6 +167,16 @@ interface AuditBundle {
   health: HealthSummary;
 }
 
+function sanitizeManifestForAudit(manifest: Manifest): unknown {
+  const clone: any = JSON.parse(JSON.stringify(manifest));
+  clone.mcpServers = clone.mcpServers.map((server: any) => ({
+    ...server,
+    ...(server.env ? { env: Object.fromEntries(Object.keys(server.env).map(key => [key, '[REDACTED]'])) } : {}),
+    ...(server.headers ? { headers: Object.fromEntries(Object.keys(server.headers).map(key => [key, '[REDACTED]'])) } : {})
+  }));
+  return JSON.parse(redactText(JSON.stringify(clone)));
+}
+
 export async function exportAuditBundle(output: string, manifest: Manifest, cwd = process.cwd()): Promise<string> {
   const manifestText = await readFile(resolve(cwd, MANIFEST_PATH), 'utf8');
   const lockText = await readOptional(resolve(cwd, LOCK_PATH));
@@ -176,10 +186,10 @@ export async function exportAuditBundle(output: string, manifest: Manifest, cwd 
   const bundle: AuditBundle = {
     version: 1,
     createdAt: new Date().toISOString(),
-    project: manifest.project.name,
+    project: redactText(manifest.project.name),
     manifestSha256: createHash('sha256').update(manifestText).digest('hex'),
-    manifest: JSON.parse(JSON.stringify(manifest)),
-    lock: lockText ? JSON.parse(lockText) : null,
+    manifest: sanitizeManifestForAudit(manifest),
+    lock: lockText ? JSON.parse(redactText(lockText)) : null,
     sessionSummaries,
     securityEvents,
     learnings,
@@ -217,7 +227,7 @@ export async function emitTelemetry(type: string, data: Record<string, unknown>,
   const event = {
     at: new Date().toISOString(),
     type,
-    ...(config.includeProjectName ? { project: manifest.project.name } : {}),
+    ...(config.includeProjectName ? { project: redactText(manifest.project.name) } : {}),
     data: JSON.parse(redactText(JSON.stringify(data)))
   };
   await appendFile(path, JSON.stringify(event) + '\n', { mode: 0o600 });
