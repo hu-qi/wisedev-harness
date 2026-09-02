@@ -3,10 +3,12 @@ import { Command } from 'commander';
 import { applyAdapters } from './adapters.js';
 import { checkHarness, hasFailures, initHarness, verifyHarness } from './core.js';
 import { diffHarness, listSnapshots, pullHarness, rollbackHarness } from './distribution.js';
+import { injectHooks, listHooks, removeHooks, runHook } from './hooks.js';
 import { loadManifest } from './manifest.js';
+import { isManifestTrusted, revokeTrust, trustManifest } from './trust.js';
 
 const program = new Command();
-program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.2.0');
+program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.3.0');
 
 function print(checks: Awaited<ReturnType<typeof checkHarness>>) {
   for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}  ${c.detail}`);
@@ -48,6 +50,40 @@ program.command('snapshots').description('List saved lockfile snapshots').action
 program.command('rollback [snapshot]').description('Restore git skills from a previous lockfile snapshot').action(async snapshot => {
   const chosen = await rollbackHarness(await loadManifest(), process.cwd(), snapshot);
   console.log(`Rolled back using ${chosen}`);
+});
+
+program.command('trust').description('Trust the exact current manifest fingerprint for command hooks').action(async () => {
+  const record = await trustManifest();
+  console.log(`Trusted manifest ${record.manifestSha256}`);
+});
+
+program.command('untrust').description('Revoke local hook execution trust').action(async () => {
+  await revokeTrust();
+  console.log('Manifest hook trust revoked.');
+});
+
+program.command('trust-status').description('Show whether the exact current manifest is trusted').action(async () => {
+  const trusted = await isManifestTrusted();
+  console.log(trusted ? 'TRUSTED' : 'UNTRUSTED');
+  if (!trusted) process.exitCode = 3;
+});
+
+const hooks = program.command('hooks').description('Manage runtime hook integration');
+hooks.command('inject').description('Reconcile WiseDev hooks into enabled runtime hook files').action(async () => {
+  const files = await injectHooks(await loadManifest());
+  for (const file of files) console.log(`Managed ${file}`);
+  console.log('Note: Codex may require explicit hook trust in its own UI in addition to WiseDev manifest trust.');
+});
+hooks.command('remove').description('Remove only WiseDev-managed runtime hooks').action(async () => {
+  for (const file of await removeHooks(await loadManifest())) console.log(`Cleaned ${file}`);
+});
+hooks.command('list').description('List declarative hooks from the manifest').action(async () => {
+  for (const line of listHooks(await loadManifest())) console.log(line);
+});
+
+program.command('hook-run <id>').description('Internal trusted hook dispatcher').action(async id => {
+  const status = await runHook(await loadManifest(), id);
+  if (status !== 0) process.exitCode = status;
 });
 
 program.command('doctor').description('Diagnose and reconcile generated runtime adapter blocks').option('--fix', 'rewrite managed runtime blocks').action(async opts => {

@@ -1,6 +1,6 @@
 {
   "name": "wisedev-harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Vendor-neutral runtime, distribution and verification harness for WiseDev agents",
   "type": "module",
   "bin": { "wisedev-harness": "dist/index.js" },

@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { applyAdapters } from './adapters.js';
 import { checkDistributionIntegrity } from './integrity.js';
 import { defaultManifest, loadManifest, MANIFEST_PATH, serializeManifest, type Manifest } from './manifest.js';
+import { isManifestTrusted } from './trust.js';
 
 export interface Check { name: string; ok: boolean; detail: string }
 
@@ -18,6 +19,7 @@ export async function initHarness(cwd = process.cwd(), force = false) {
   }
   const manifest = defaultManifest(basename(cwd));
   await writeFile(manifestPath, serializeManifest(manifest), 'utf8');
+  await writeFile(resolve(cwd, '.agents/.gitignore'), ['cache/', 'history/', 'skills/', 'state.json', 'trust.json', '*.staging-*', ''].join('\n'), 'utf8');
   const touched = await applyAdapters(manifest, cwd);
   await writeFile(resolve(cwd, '.agents/state.json'), JSON.stringify({ schemaVersion: 1, manifestVersion: manifest.version, updatedAt: new Date().toISOString(), runtimes: manifest.runtimes }, null, 2) + '\n');
   return { manifestPath, touched };
@@ -42,6 +44,10 @@ export async function checkHarness(cwd = process.cwd()): Promise<Check[]> {
       out.push({ name: `rule:${rule.path}`, ok: ok || !rule.required, detail: ok ? path : `missing ${path}` });
     }
     out.push(...await checkDistributionIntegrity(manifest, cwd));
+    if (manifest.hooks.length > 0 && manifest.policies.requireHookTrust) {
+      const trusted = await isManifestTrusted(cwd);
+      out.push({ name: 'hook-trust', ok: trusted, detail: trusted ? 'exact manifest fingerprint is trusted' : 'hooks declared but current manifest is not trusted' });
+    }
   } catch (error: any) { out.push({ name: 'manifest', ok: false, detail: error?.message ?? String(error) }); }
   return out;
 }
