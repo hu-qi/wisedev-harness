@@ -1,0 +1,48 @@
+{
+  "name": "wisedev-harness",
+  "version": "0.1.0",
+  "description": "Runtime, verification, distribution and evolution harness for AI-assisted software engineering",
+  "type": "module",
+  "bin": {
+    "wisedev-harness": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "harness",
+    "claude",
+    "codex",
+    "skills"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hu-qi/wisedev-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hu-qi/wisedev-harness/issues"
+  },
+  "homepage": "https://github.com/hu-qi/wisedev-harness#readme",
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
