@@ -8,17 +8,17 @@
 - [x] Claude Code and Codex skill adapters.
 - [x] Claude rules and non-destructive Codex `AGENTS.md` rules.
 - [x] Integration tests and CI.
-- [ ] Lock dependency graph and publish release artifacts.
-- [ ] Windows/macOS/Linux integration matrix.
 
 ## M1 — Multi-agent distribution (v0.2)
 
-- Cursor and OpenCode adapters.
-- Adapter capability matrix and conformance suite.
-- Remote Git sources with pinned refs and lockfile.
-- `plan`/machine-readable sync plan.
-- Managed hooks and MCP configuration with secret references only.
-- Resource namespaces, tags and project/user scopes.
+- [x] Cursor adapter with `.mdc` rule rendering.
+- [ ] OpenCode adapter and instruction activation.
+- [x] Machine-readable `plan` output shared by dry-run/sync behavior.
+- [x] Linux/macOS/Windows integration matrix.
+- [ ] Remote Git sources with pinned refs and lockfile.
+- [ ] Managed hooks and MCP configuration with secret references only.
+- [ ] Resource namespaces, tags and project/user scopes.
+- [ ] Lock dependency graph and publish release artifacts.
 
 ## M2 — Team-ready governance (v0.3)
 

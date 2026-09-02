@@ -3,7 +3,7 @@ import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { HARNESS_GITIGNORE_PATH, MANIFEST_PATH } from './constants.js';
 import { HarnessError } from './errors.js';
-import { agentDisplayName, claudeRuleTarget, skillTarget } from './adapters.js';
+import { agentDisplayName, claudeRuleTarget, cursorRuleContent, cursorRuleTarget, skillTarget } from './adapters.js';
 import { createDefaultManifest, diagnoseManifestSources, loadManifest, serializeManifest } from './manifest.js';
 import { buildCodexRulesBlock, codexBlockHash, extractCodexRulesBlock, replaceCodexRulesBlock, type RuleSource } from './rules.js';
 import type { AgentId, Diagnostic, HarnessManifest, HarnessState, ManagedEntry, Operation, SyncResult, VerifyResult } from './types.js';
@@ -146,6 +146,11 @@ async function collectExpected(root: string, manifest: HarnessManifest): Promise
         if (manifest.agents.includes('claude')) {
           const target = claudeRuleTarget(file.relativePath);
           add({ kind: 'file', path: target, content: file.content, hash: sha256(file.content), source });
+        }
+        if (manifest.agents.includes('cursor')) {
+          const target = cursorRuleTarget(file.relativePath);
+          const content = cursorRuleContent(source, file.content);
+          add({ kind: 'file', path: target, content, hash: sha256(content), source });
         }
       }
     }
@@ -308,6 +313,10 @@ export async function syncProject(root: string, options: SyncOptions = {}): Prom
   await writeState(projectRoot, nextState);
   diagnostics.push({ level: 'info', code: 'SYNC_COMPLETE', message: `Synchronization complete; ${changes.length} change(s) applied` });
   return { operations, diagnostics, changed: changes.length > 0 };
+}
+
+export async function planProject(root: string, options: Omit<SyncOptions, 'dryRun'> = {}): Promise<SyncResult> {
+  return syncProject(root, { ...options, dryRun: true });
 }
 
 export async function verifyProject(root: string): Promise<VerifyResult> {

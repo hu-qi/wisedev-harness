@@ -1,6 +1,6 @@
 {
   "name": "wisedev-harness",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.1",
   "description": "Runtime, verification, distribution and evolution harness for AI-assisted software engineering",
   "type": "module",
   "bin": {
@@ -27,6 +27,7 @@
     "harness",
     "claude",
     "codex",
+    "cursor",
     "skills"
   ],
   "license": "MIT",

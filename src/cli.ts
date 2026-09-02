@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { checkProject, initProject, syncProject, verifyProject } from './project.js';
+import { checkProject, initProject, planProject, syncProject, verifyProject } from './project.js';
 import { SUPPORTED_AGENTS, type AgentId, type Diagnostic, type Operation } from './types.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0-alpha.1';
 
 function optionValue(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -39,7 +39,7 @@ function printOperations(operations: Operation[]): void {
 }
 
 function printHelp(): void {
-  console.log(`WiseDev Harness ${VERSION}\n\nUsage:\n  wisedev-harness <command> [options]\n\nCommands:\n  init      Create a project-local Harness manifest and resource roots\n  check     Diagnose environment, manifest, and declared resource roots\n  sync      Synchronize declared resources into enabled Agent adapters\n  verify    Verify manifest, state, and managed target drift\n  version   Print version\n\nGlobal options:\n  --cwd <path>        Operate on another project directory\n  --json              Emit JSON for check/verify\n\ninit options:\n  --agent <ids>       Comma-separated agents: claude,codex\n  --force             Explicitly replace an existing manifest\n\nsync options:\n  --dry-run           Show changes without writing\n  --force             Overwrite conflicting managed targets\n`);
+  console.log(`WiseDev Harness ${VERSION}\n\nUsage:\n  wisedev-harness <command> [options]\n\nCommands:\n  init      Create a project-local Harness manifest and resource roots\n  check     Diagnose environment, manifest, and declared resource roots\n  plan      Compute synchronization changes without writing\n  sync      Synchronize declared resources into enabled Agent adapters\n  verify    Verify manifest, state, and managed target drift\n  version   Print version\n\nGlobal options:\n  --cwd <path>        Operate on another project directory\n  --json              Emit JSON for check/plan/verify\n\ninit options:\n  --agent <ids>       Comma-separated agents: claude,codex,cursor\n  --force             Explicitly replace an existing manifest\n\nplan/sync options:\n  --force             Evaluate/apply overwrite policy for conflicts\n\nsync options:\n  --dry-run           Alias for a non-writing synchronization preview\n`);
 }
 
 async function main(): Promise<void> {
@@ -64,6 +64,16 @@ async function main(): Promise<void> {
         if (json) console.log(JSON.stringify({ ok: !diagnostics.some((item) => item.level === 'error'), diagnostics }, null, 2));
         else printDiagnostics(diagnostics);
         if (diagnostics.some((item) => item.level === 'error')) process.exitCode = 1;
+        break;
+      }
+      case 'plan': {
+        const result = await planProject(root, { force: hasFlag(args, '--force') });
+        if (json) console.log(JSON.stringify(result, null, 2));
+        else {
+          printDiagnostics(result.diagnostics);
+          printOperations(result.operations);
+        }
+        if (result.diagnostics.some((item) => item.level === 'error')) process.exitCode = 1;
         break;
       }
       case 'sync': {
