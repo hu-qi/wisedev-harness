@@ -80,15 +80,17 @@
 - [x] Execution-bearing user Hooks/policies isolated from project inheritance
 - [x] Scope/shared-source/offline-bundle regression tests
 
-## v0.9 — Enterprise operations
+## v0.9 — Enterprise operations ✅
 
-- [ ] Opt-in structured telemetry with privacy controls
-- [ ] Exportable audit bundles
-- [ ] Enterprise policy packs
-- [ ] Policy conflict explain output
-- [ ] Team/session health summaries
-- [ ] Pluggable recall backend
-- [ ] MCP declaration and runtime translation
+- [x] Opt-in structured local telemetry with privacy controls and default-off semantics
+- [x] Exportable privacy-bounded audit bundles
+- [x] Monotonic enterprise policy packs
+- [x] Deterministic policy-conflict explain output sharing the execution decision path
+- [x] Team/session health summaries from friction, security and learning signals
+- [x] Pluggable in-process Recall backend contract with lexical and local JSON-index backends
+- [x] Vendor-neutral MCP declaration and trusted Claude/Codex/Cursor runtime translation
+- [x] MCP unmanaged-config preservation and same-name conflict fail-closed behavior
+- [x] MCP/env/header audit redaction and enterprise regression tests
 
 ## v1.0 — Production/commercial readiness
 
