@@ -2,10 +2,11 @@
 import { Command } from 'commander';
 import { applyAdapters } from './adapters.js';
 import { checkHarness, hasFailures, initHarness, verifyHarness } from './core.js';
+import { diffHarness, listSnapshots, pullHarness, rollbackHarness } from './distribution.js';
 import { loadManifest } from './manifest.js';
 
 const program = new Command();
-program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.1.0');
+program.name('wisedev-harness').description('WiseDev agent harness runtime and verification CLI').version('0.2.0');
 
 function print(checks: Awaited<ReturnType<typeof checkHarness>>) {
   for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}  ${c.detail}`);
@@ -23,6 +24,32 @@ program.command('init')
 
 program.command('check').description('Validate environment, manifest and required resources').action(async () => print(await checkHarness()));
 program.command('verify').description('Run check plus runtime adapter integrity verification').action(async () => print(await verifyHarness()));
+
+program.command('pull').description('Install git skills at versions pinned in the lockfile; resolve only missing pins').action(async () => {
+  const lock = await pullHarness(await loadManifest(), process.cwd(), false);
+  for (const [name, item] of Object.entries(lock.skills)) console.log(`SYNC  ${name}  ${item.resolved.slice(0, 12)}  ${item.target}`);
+});
+
+program.command('update').description('Resolve configured git refs again, install them, and update the lockfile').action(async () => {
+  const lock = await pullHarness(await loadManifest(), process.cwd(), true);
+  for (const [name, item] of Object.entries(lock.skills)) console.log(`UPDATE  ${name}  ${item.resolved.slice(0, 12)}  ${item.target}`);
+});
+
+program.command('diff').description('Compare locked git skills with current configured refs without installing changes').action(async () => {
+  const entries = await diffHarness(await loadManifest());
+  for (const item of entries) console.log(`${item.status.toUpperCase()}  ${item.name}${item.locked ? `  locked=${item.locked.slice(0, 12)}` : ''}${item.remote ? `  remote=${item.remote.slice(0, 12)}` : ''}`);
+  if (entries.some(item => item.status !== 'current')) process.exitCode = 2;
+});
+
+program.command('snapshots').description('List saved lockfile snapshots').action(async () => {
+  for (const name of await listSnapshots()) console.log(name);
+});
+
+program.command('rollback [snapshot]').description('Restore git skills from a previous lockfile snapshot').action(async snapshot => {
+  const chosen = await rollbackHarness(await loadManifest(), process.cwd(), snapshot);
+  console.log(`Rolled back using ${chosen}`);
+});
+
 program.command('doctor').description('Diagnose and reconcile generated runtime adapter blocks').option('--fix', 'rewrite managed runtime blocks').action(async opts => {
   const before = await verifyHarness();
   print(before);
