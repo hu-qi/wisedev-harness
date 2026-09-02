@@ -6,6 +6,7 @@ import type { Manifest, Skill } from './manifest.js';
 
 export interface LockedGitSkill {
   source: 'git';
+  sourceName?: string;
   url: string;
   ref: string;
   resolved: string;
@@ -20,10 +21,19 @@ export interface HarnessLock {
   skills: Record<string, LockedGitSkill>;
 }
 
+interface ResolvedGitSkill {
+  name: string;
+  source: 'git';
+  sourceName?: string;
+  url: string;
+  ref: string;
+  path?: string;
+}
+
 export const LOCK_PATH = '.agents/harness.lock.json';
-const HISTORY_DIR = '.agents/history';
-const CACHE_DIR = '.agents/cache/git';
-const SKILLS_DIR = '.agents/skills';
+export const HISTORY_DIR = '.agents/history';
+export const CACHE_DIR = '.agents/cache/git';
+export const SKILLS_DIR = '.agents/skills';
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -51,7 +61,7 @@ async function exists(path: string): Promise<boolean> {
   try { await stat(path); return true; } catch { return false; }
 }
 
-async function copyTree(source: string, target: string): Promise<void> {
+export async function copyTree(source: string, target: string): Promise<void> {
   const info = await stat(source);
   if (info.isDirectory()) {
     await mkdir(target, { recursive: true });
@@ -66,7 +76,7 @@ async function copyTree(source: string, target: string): Promise<void> {
   await copyFile(source, target);
 }
 
-async function hashTree(root: string): Promise<string> {
+export async function hashTree(root: string): Promise<string> {
   const hasher = createHash('sha256');
   async function walk(path: string): Promise<void> {
     const info = await stat(path);
@@ -85,7 +95,7 @@ async function hashTree(root: string): Promise<string> {
   return hasher.digest('hex');
 }
 
-async function installTree(source: string, target: string): Promise<void> {
+export async function installTree(source: string, target: string): Promise<void> {
   const staging = `${target}.staging-${process.pid}-${Date.now()}`;
   await rm(staging, { recursive: true, force: true });
   await copyTree(source, staging);
@@ -118,6 +128,14 @@ function ensureCommit(repoDir: string, commit: string): void {
   git(['clean', '-fdx'], repoDir);
 }
 
+function resolveSkillSource(manifest: Manifest, skill: Skill): ResolvedGitSkill | null {
+  if (skill.source === 'local') return null;
+  if (skill.source === 'git') return { name: skill.name, source: 'git', url: skill.url, ref: skill.ref, ...(skill.path ? { path: skill.path } : {}) };
+  const source = manifest.sources.find(item => item.name === skill.sourceName);
+  if (!source) throw new Error(`Skill '${skill.name}' references unknown shared source '${skill.sourceName}'.`);
+  return { name: skill.name, source: 'git', sourceName: source.name, url: source.url, ref: source.ref, path: skill.path };
+}
+
 export async function readLock(cwd = process.cwd()): Promise<HarnessLock | null> {
   try {
     const raw = JSON.parse(await readFile(resolve(cwd, LOCK_PATH), 'utf8')) as HarnessLock;
@@ -138,12 +156,12 @@ async function snapshotLock(cwd: string): Promise<void> {
   await writeFile(join(dir, `${stamp}.lock.json`), JSON.stringify(current, null, 2) + '\n');
 }
 
-async function writeLock(cwd: string, lock: HarnessLock): Promise<void> {
+export async function writeLock(cwd: string, lock: HarnessLock): Promise<void> {
   await mkdir(resolve(cwd, '.agents'), { recursive: true });
   await writeFile(resolve(cwd, LOCK_PATH), JSON.stringify(lock, null, 2) + '\n');
 }
 
-async function resolveGitSkill(cwd: string, skill: Extract<Skill, { source: 'git' }>, pinned?: LockedGitSkill): Promise<LockedGitSkill> {
+async function resolveGitSkill(cwd: string, skill: ResolvedGitSkill, pinned?: LockedGitSkill): Promise<LockedGitSkill> {
   assertSafeRelativePath(skill.path ?? '.');
   const repoDir = await ensureRepo(cwd, skill.url);
   const resolved = pinned?.resolved ?? resolveRemoteRef(repoDir, skill.ref);
@@ -153,14 +171,14 @@ async function resolveGitSkill(cwd: string, skill: Extract<Skill, { source: 'git
   const target = resolve(cwd, SKILLS_DIR, skill.name);
   await installTree(source, target);
   return {
-    source: 'git', url: skill.url, ref: skill.ref, resolved,
+    source: 'git', ...(skill.sourceName ? { sourceName: skill.sourceName } : {}), url: skill.url, ref: skill.ref, resolved,
     ...(skill.path ? { path: skill.path } : {}),
     contentSha256: await hashTree(target),
     target: relative(cwd, target).split(sep).join('/')
   };
 }
 
-function matchingPin(skill: Extract<Skill, { source: 'git' }>, locked?: LockedGitSkill): LockedGitSkill | undefined {
+function matchingPin(skill: ResolvedGitSkill, locked?: LockedGitSkill): LockedGitSkill | undefined {
   if (!locked) return undefined;
   return locked.url === skill.url && locked.ref === skill.ref && locked.path === skill.path ? locked : undefined;
 }
@@ -169,9 +187,10 @@ export async function pullHarness(manifest: Manifest, cwd = process.cwd(), updat
   const previous = await readLock(cwd);
   const next: HarnessLock = { version: 1, generatedAt: new Date().toISOString(), skills: {} };
   for (const skill of manifest.skills) {
-    if (skill.source !== 'git') continue;
-    const pin = update ? undefined : matchingPin(skill, previous?.skills[skill.name]);
-    next.skills[skill.name] = await resolveGitSkill(cwd, skill, pin);
+    const resolvedSkill = resolveSkillSource(manifest, skill);
+    if (!resolvedSkill) continue;
+    const pin = update ? undefined : matchingPin(resolvedSkill, previous?.skills[skill.name]);
+    next.skills[skill.name] = await resolveGitSkill(cwd, resolvedSkill, pin);
   }
   if (previous) await snapshotLock(cwd);
   await writeLock(cwd, next);
@@ -184,12 +203,13 @@ export async function diffHarness(manifest: Manifest, cwd = process.cwd()): Prom
   const lock = await readLock(cwd);
   const out: DiffEntry[] = [];
   for (const skill of manifest.skills) {
-    if (skill.source !== 'git') continue;
+    const resolvedSkill = resolveSkillSource(manifest, skill);
+    if (!resolvedSkill) continue;
     const locked = lock?.skills[skill.name];
     if (!locked) { out.push({ name: skill.name, status: 'unlocked' }); continue; }
-    if (!matchingPin(skill, locked)) { out.push({ name: skill.name, status: 'changed-source', locked: locked.resolved }); continue; }
-    assertGitUrl(skill.url);
-    const line = git(['ls-remote', skill.url, skill.ref]).split('\n').find(Boolean);
+    if (!matchingPin(resolvedSkill, locked)) { out.push({ name: skill.name, status: 'changed-source', locked: locked.resolved }); continue; }
+    assertGitUrl(resolvedSkill.url);
+    const line = git(['ls-remote', resolvedSkill.url, resolvedSkill.ref]).split('\n').find(Boolean);
     const remote = line?.split(/\s+/)[0];
     out.push({ name: skill.name, status: remote === locked.resolved ? 'current' : 'update-available', locked: locked.resolved, remote });
   }
@@ -208,10 +228,11 @@ export async function rollbackHarness(manifest: Manifest, cwd = process.cwd(), s
   if (!chosen || !snapshots.includes(chosen)) throw new Error('No matching Harness lock snapshot found.');
   const lock = JSON.parse(await readFile(resolve(cwd, HISTORY_DIR, chosen), 'utf8')) as HarnessLock;
   for (const skill of manifest.skills) {
-    if (skill.source !== 'git') continue;
+    const resolvedSkill = resolveSkillSource(manifest, skill);
+    if (!resolvedSkill) continue;
     const pinned = lock.skills[skill.name];
     if (!pinned) continue;
-    await resolveGitSkill(cwd, skill, pinned);
+    await resolveGitSkill(cwd, resolvedSkill, pinned);
   }
   const current = await readLock(cwd);
   if (current) await snapshotLock(cwd);
