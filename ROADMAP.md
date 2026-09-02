@@ -53,7 +53,7 @@
 - [x] `security policy` and `security scan` inspection commands
 - [x] Security regression tests
 
-## v0.7 — Packaging and supply chain ✅ implementation / CI pending merge
+## v0.7 — Packaging and supply chain ✅
 
 - [x] Deterministic `package-lock.json`
 - [x] `npm ci`-based CI with lockfile cache
@@ -67,15 +67,18 @@
 - [x] GitHub release artifact workflow
 - [x] npm provenance-ready publication of the exact verified tarball
 
-## v0.8 — Scope and team distribution
+## v0.8 — Scope and team distribution ✅
 
-- [ ] Explicit `project` and `user` scope model
-- [ ] Layered resource resolution with deterministic precedence
-- [ ] Role/tag based Skill selection
-- [ ] Additional shared Harness sources
-- [ ] Offline/air-gapped cache export/import
-- [ ] Team contribution/review protocol
-- [ ] Adapter capability matrix
+- [x] Explicit `project` and `user` scope model
+- [x] Layered resource resolution with deterministic project-over-user precedence
+- [x] Local role/tag based Skill selection
+- [x] Named shared Harness Sources with exact lock semantics
+- [x] Offline/air-gapped verified Skill bundle export/import
+- [x] Team contribution/review protocol
+- [x] Runtime adapter capability matrix
+- [x] Layered project + user Learning Recall
+- [x] Execution-bearing user Hooks/policies isolated from project inheritance
+- [x] Scope/shared-source/offline-bundle regression tests
 
 ## v0.9 — Enterprise operations
 
