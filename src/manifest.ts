@@ -7,6 +7,8 @@ export const SafeName = z.string().min(1).regex(/^[A-Za-z0-9._-]+$/, 'must conta
 export const RuntimeSchema = z.enum(['claude', 'codex', 'cursor']);
 export const HookEventSchema = z.enum(['SessionStart', 'Stop', 'PostToolUse', 'UserPromptSubmit']);
 export const ScopeSchema = z.enum(['project', 'user']);
+export const PolicyPackSchema = z.enum(['enterprise-baseline', 'enterprise-strict']);
+export const RecallBackendSchema = z.enum(['lexical', 'json-index']);
 
 const SkillMeta = {
   name: SafeName,
@@ -37,11 +39,37 @@ export const HookSchema = z.object({
   runtimes: z.array(RuntimeSchema).optional()
 });
 
+const McpCommon = {
+  name: SafeName,
+  runtimes: z.array(RuntimeSchema).optional(),
+  enabled: z.boolean().default(true)
+};
+const McpStdioSchema = z.object({
+  ...McpCommon,
+  transport: z.literal('stdio'),
+  command: z.string().min(1),
+  args: z.array(z.string()).default([]),
+  env: z.record(z.string(), z.string()).default({})
+});
+const McpHttpSchema = z.object({
+  ...McpCommon,
+  transport: z.literal('http'),
+  url: z.string().url(),
+  headers: z.record(z.string(), z.string()).default({}),
+  bearerTokenEnvVar: SafeName.optional()
+});
+export const McpServerSchema = z.discriminatedUnion('transport', [McpStdioSchema, McpHttpSchema]);
+
 const ExecutionPolicySchema = z.object({
   allow: z.array(z.string().min(1)).default([]),
   deny: z.array(z.string().min(1)).default([]),
   denyShellMetacharacters: z.boolean().default(false)
 }).default({ allow: [], deny: [], denyShellMetacharacters: false });
+
+const RecallSchema = z.object({
+  backend: RecallBackendSchema.default('lexical'),
+  indexPath: z.string().min(1).default('.agents/recall-index.json')
+}).default({ backend: 'lexical', indexPath: '.agents/recall-index.json' });
 
 export const ManifestSchema = z.object({
   version: z.literal(1),
@@ -53,17 +81,20 @@ export const ManifestSchema = z.object({
   skills: z.array(SkillSchema).default([]),
   rules: z.array(z.object({ path: z.string().min(1), required: z.boolean().default(true) })).default([]),
   hooks: z.array(HookSchema).default([]),
+  mcpServers: z.array(McpServerSchema).default([]),
+  recall: RecallSchema,
   policies: z.object({
     managedBlockId: z.string().min(1).default('wisedev-harness'),
     failOnMissingRequired: z.boolean().default(true),
     requireHookTrust: z.boolean().default(true),
     hookShell: z.enum(['sh']).default('sh'),
     execution: ExecutionPolicySchema,
+    policyPacks: z.array(PolicyPackSchema).default([]),
     protectSymlinkEscapes: z.boolean().default(true),
     secretScan: z.boolean().default(true)
   }).default({
     managedBlockId: 'wisedev-harness', failOnMissingRequired: true, requireHookTrust: true, hookShell: 'sh',
-    execution: { allow: [], deny: [], denyShellMetacharacters: false }, protectSymlinkEscapes: true, secretScan: true
+    execution: { allow: [], deny: [], denyShellMetacharacters: false }, policyPacks: [], protectSymlinkEscapes: true, secretScan: true
   })
 });
 
@@ -71,8 +102,11 @@ export type Manifest = z.infer<typeof ManifestSchema>;
 export type Skill = z.infer<typeof SkillSchema>;
 export type SharedSource = z.infer<typeof SharedSourceSchema>;
 export type HookDef = z.infer<typeof HookSchema>;
+export type McpServer = z.infer<typeof McpServerSchema>;
 export type RuntimeName = z.infer<typeof RuntimeSchema>;
 export type HarnessScope = z.infer<typeof ScopeSchema>;
+export type PolicyPackName = z.infer<typeof PolicyPackSchema>;
+export type RecallBackendName = z.infer<typeof RecallBackendSchema>;
 export const MANIFEST_PATH = '.agents/manifest.yaml';
 
 export async function loadManifest(cwd = process.cwd()): Promise<Manifest> {

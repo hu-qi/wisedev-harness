@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
+import YAML from 'yaml';
 
 const CURRENT_SESSION = '.agents/session-current.json';
 const SESSION_DIR = '.agents/sessions';
@@ -32,6 +33,7 @@ export interface SessionSummary {
 }
 export interface LearningCandidate { version: 1; id: string; sessionId: string; task: string; createdAt: string; frictionScore: number; signals: string[]; evidence: SessionEvent[] }
 export interface Learning { version: 1; id: string; title: string; summary: string; tags: string[]; sourceSession?: string; createdAt: string }
+export interface RecallResult { file: string; learning: Learning; score: number; matched: string[] }
 
 export function redactText(input: string): string {
   return input
@@ -140,7 +142,16 @@ function terms(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/[^\p{L}\p{N}._-]+/u).filter(term => term.length >= 2));
 }
 
-export async function recallLearnings(query: string, cwd = process.cwd(), limit = 5): Promise<Array<{ file: string; learning: Learning; score: number; matched: string[] }>> {
+function scoreLearning(q: Set<string>, learning: Learning): { score: number; matched: string[] } {
+  const title = terms(learning.title);
+  const tagTerms = terms(learning.tags.join(' '));
+  const body = terms(learning.summary);
+  const matched = [...q].filter(term => title.has(term) || tagTerms.has(term) || body.has(term));
+  const score = matched.reduce((sum, term) => sum + (title.has(term) ? 4 : 0) + (tagTerms.has(term) ? 3 : 0) + (body.has(term) ? 1 : 0), 0);
+  return { score, matched };
+}
+
+async function lexicalRecall(query: string, cwd: string, limit: number): Promise<RecallResult[]> {
   const q = terms(query);
   const dir = resolve(cwd, LEARNING_DIR);
   let files: string[];
@@ -148,10 +159,53 @@ export async function recallLearnings(query: string, cwd = process.cwd(), limit 
   catch (error: any) { if (error?.code === 'ENOENT') return []; throw error; }
   const scored = await Promise.all(files.map(async file => {
     const learning = JSON.parse(await readFile(join(dir, file), 'utf8')) as Learning;
-    const title = terms(learning.title); const tagTerms = terms(learning.tags.join(' ')); const body = terms(learning.summary);
-    const matched = [...q].filter(term => title.has(term) || tagTerms.has(term) || body.has(term));
-    const score = matched.reduce((sum, term) => sum + (title.has(term) ? 4 : 0) + (tagTerms.has(term) ? 3 : 0) + (body.has(term) ? 1 : 0), 0);
-    return { file, learning, score, matched };
+    return { file, learning, ...scoreLearning(q, learning) };
   }));
   return scored.filter(item => item.score > 0).sort((a, b) => b.score - a.score || b.learning.createdAt.localeCompare(a.learning.createdAt)).slice(0, Math.max(1, limit));
+}
+
+async function readRecallConfig(cwd: string): Promise<{ backend: 'lexical' | 'json-index'; indexPath: string }> {
+  try {
+    const raw = YAML.parse(await readFile(resolve(cwd, '.agents/manifest.yaml'), 'utf8')) as any;
+    const backend = raw?.recall?.backend === 'json-index' ? 'json-index' : 'lexical';
+    const indexPath = typeof raw?.recall?.indexPath === 'string' ? raw.recall.indexPath : '.agents/recall-index.json';
+    return { backend, indexPath };
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return { backend: 'lexical', indexPath: '.agents/recall-index.json' };
+    throw error;
+  }
+}
+
+function assertSafeIndexPath(cwd: string, indexPath: string): string {
+  if (!indexPath || indexPath.startsWith('/') || indexPath === '..' || indexPath.includes('../') || indexPath.includes('\\..\\')) throw new Error(`Unsafe Recall index path '${indexPath}'.`);
+  const root = resolve(cwd);
+  const path = resolve(root, indexPath);
+  if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error(`Recall index path escapes scope root: ${indexPath}`);
+  return path;
+}
+
+async function jsonIndexRecall(query: string, cwd: string, indexPath: string, limit: number): Promise<RecallResult[]> {
+  const path = assertSafeIndexPath(cwd, indexPath);
+  let raw: unknown;
+  try { raw = JSON.parse(await readFile(path, 'utf8')); }
+  catch (error: any) { if (error?.code === 'ENOENT') return []; throw new Error(`Invalid Recall JSON index '${indexPath}': ${error?.message ?? String(error)}`); }
+  if (!Array.isArray(raw)) throw new Error(`Recall JSON index '${indexPath}' must contain an array.`);
+  const q = terms(query);
+  const out: RecallResult[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const value = raw[i] as Partial<Learning>;
+    if (value.version !== 1 || typeof value.id !== 'string' || typeof value.title !== 'string' || typeof value.summary !== 'string' || !Array.isArray(value.tags) || typeof value.createdAt !== 'string') {
+      throw new Error(`Recall JSON index '${indexPath}' has an invalid Learning at index ${i}.`);
+    }
+    const learning = value as Learning;
+    const scored = scoreLearning(q, learning);
+    if (scored.score > 0) out.push({ file: `${indexPath}#${i}`, learning, ...scored });
+  }
+  return out.sort((a, b) => b.score - a.score || b.learning.createdAt.localeCompare(a.learning.createdAt)).slice(0, Math.max(1, limit));
+}
+
+export async function recallLearnings(query: string, cwd = process.cwd(), limit = 5): Promise<RecallResult[]> {
+  const config = await readRecallConfig(cwd);
+  if (config.backend === 'json-index') return jsonIndexRecall(query, cwd, config.indexPath, limit);
+  return lexicalRecall(query, cwd, limit);
 }

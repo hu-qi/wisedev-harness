@@ -6,9 +6,11 @@ import { exportOfflineBundle, importOfflineBundle } from './bundle.js';
 import { capabilityLines } from './capabilities.js';
 import { checkHarness, hasFailures, initHarness, verifyHarness } from './core.js';
 import { diffHarness, listSnapshots, pullHarness, rollbackHarness } from './distribution.js';
+import { buildHealthSummary, emitTelemetry, explainCommandPolicy, exportAuditBundle, policyPackLines, readTelemetryConfig, setTelemetry } from './enterprise.js';
 import { applyEvolution, approveEvolution, evaluateEvolution, evolutionDiff, proposeEvolution, readEvolutionCandidate, rollbackEvolution } from './evolution.js';
 import { injectHooks, listHooks, removeHooks, runHook } from './hooks.js';
 import { addLearning, endSession, listLearningCandidates, promoteLearning, recallLearnings, recordSessionEvent, startSession, type SessionEventType } from './knowledge.js';
+import { listMcp, reconcileMcp } from './mcp.js';
 import { loadManifest, ScopeSchema, type HarnessScope } from './manifest.js';
 import { evaluateCommandPolicy, scanFileSecrets } from './security.js';
 import { loadEffectiveManifest, loadManifestForScope, loadProfile, saveProfile, scopeRoot, scopeStatus, userScopeRoot } from './team.js';
@@ -134,11 +136,58 @@ program.command('capabilities').description('Show supported runtime adapter capa
   for (const line of capabilityLines()) console.log(line);
 });
 
-program.command('trust').description('Trust the exact current project manifest fingerprint for command hooks/evals').action(async () => {
+const mcp = program.command('mcp').description('Manage trusted project MCP declarations across Claude, Codex, and Cursor');
+mcp.command('list').description('List vendor-neutral MCP declarations from the project manifest').action(async () => {
+  requireProjectScope();
+  for (const line of listMcp(await loadManifest())) console.log(line);
+});
+mcp.command('inject').description('Reconcile trusted MCP declarations into enabled runtime configuration files').action(async () => {
+  requireProjectScope();
+  const manifest = await loadManifest();
+  for (const file of await reconcileMcp(manifest)) console.log(`Managed ${file}`);
+});
+mcp.command('remove').description('Remove only WiseDev-managed MCP servers while preserving unmanaged configuration').action(async () => {
+  requireProjectScope();
+  const manifest = await loadManifest();
+  for (const file of await reconcileMcp(manifest, process.cwd(), true)) console.log(`Cleaned ${file}`);
+});
+
+program.command('health').description('Summarize local Harness friction, security and learning health for the selected scope').option('--json', 'print machine-readable JSON').action(async opts => {
+  const root = scopeRoot(selectedScope());
+  const health = await buildHealthSummary(root);
+  if (opts.json) { console.log(JSON.stringify(health, null, 2)); return; }
+  console.log(`${health.status.toUpperCase()} sessions=${health.sessions} frictionAvg=${health.frictionAverage} highFriction=${health.highFrictionSessions} denied=${health.deniedSecurityEvents} learnings=${health.learningCount} pending=${health.pendingLearningCandidates}`);
+  for (const reason of health.reasons) console.log(`REASON  ${reason}`);
+});
+
+const audit = program.command('audit').description('Export privacy-bounded structured Harness audit evidence');
+audit.command('export <file>').description('Export manifest/lock/session summaries/security decisions/learnings/health as gzip JSON').action(async file => {
+  const { root, manifest } = await selectedContext();
+  console.log(`EXPORTED ${await exportAuditBundle(file, manifest, root)}`);
+});
+
+const telemetry = program.command('telemetry').description('Manage opt-in local structured telemetry for the selected scope');
+telemetry.command('status').action(async () => {
+  const root = scopeRoot(selectedScope());
+  const value = await readTelemetryConfig(root);
+  console.log(`${value.enabled ? 'ENABLED' : 'DISABLED'} includeProjectName=${value.includeProjectName}`);
+});
+telemetry.command('enable').option('--include-project-name', 'include project name in local telemetry events').action(async opts => {
+  const root = scopeRoot(selectedScope());
+  const value = await setTelemetry(true, Boolean(opts.includeProjectName), root);
+  console.log(`ENABLED includeProjectName=${value.includeProjectName}`);
+});
+telemetry.command('disable').action(async () => {
+  const root = scopeRoot(selectedScope());
+  await setTelemetry(false, false, root);
+  console.log('DISABLED');
+});
+
+program.command('trust').description('Trust the exact current project manifest fingerprint for command hooks/evals/MCP').action(async () => {
   requireProjectScope();
   console.log(`Trusted manifest ${(await trustManifest()).manifestSha256}`);
 });
-program.command('untrust').description('Revoke local project hook/eval execution trust').action(async () => {
+program.command('untrust').description('Revoke local project Hook/eval/MCP execution trust').action(async () => {
   requireProjectScope();
   await revokeTrust();
   console.log('Manifest execution trust revoked.');
@@ -151,12 +200,21 @@ program.command('trust-status').description('Show whether the exact current proj
 });
 
 const security = program.command('security').description('Inspect project execution policy and secret-scan files');
+security.command('packs').description('List built-in monotonic enterprise policy packs').action(() => {
+  for (const line of policyPackLines()) console.log(line);
+});
 security.command('policy <command...>').description('Evaluate a shell command against the project execution policy without running it').action(async command => {
   requireProjectScope();
   const value = command.join(' ');
   const decision = evaluateCommandPolicy(value, await loadManifest());
   console.log(`${decision.allowed ? 'ALLOW' : 'DENY'}  ${value}\n${decision.reason}`);
   if (!decision.allowed) process.exitCode = 6;
+});
+security.command('explain <command...>').description('Show the complete deterministic policy trace for a command without running it').action(async command => {
+  requireProjectScope();
+  const trace = explainCommandPolicy(command.join(' '), await loadManifest());
+  console.log(JSON.stringify(trace, null, 2));
+  if (!trace.allowed) process.exitCode = 6;
 });
 security.command('scan <path>').description('Scan one text file for high-confidence credential patterns').action(async path => {
   const findings = await scanFileSecrets(path);
@@ -197,10 +255,11 @@ session.command('record').description('Record a redacted session event').require
   console.log(`${event.type.toUpperCase()} ${event.at}`);
 });
 session.command('end').description('End session, score friction and create a learning candidate when warranted').option('--threshold <score>', 'candidate threshold', '5').action(async opts => {
-  const root = scopeRoot(selectedScope());
+  const { root, manifest } = await selectedContext();
   const { summary, candidate } = await endSession(root, Number(opts.threshold));
   console.log(`FRICTION ${summary.frictionScore} events=${summary.eventCount}`);
   if (candidate) console.log(`LEARNING_CANDIDATE ${candidate.id}`);
+  await emitTelemetry('session.end', { frictionScore: summary.frictionScore, eventCount: summary.eventCount, highFriction: Boolean(candidate) }, manifest, root);
 });
 
 const learning = program.command('learning').description('Manage reviewed learnings in the selected scope');

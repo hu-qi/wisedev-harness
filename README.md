@@ -1,6 +1,6 @@
 # WiseDev Harness
 
-WiseDev Harness is the vendor-neutral runtime, distribution, verification, policy, knowledge, and controlled-evolution layer for WiseDev agents.
+WiseDev Harness is the vendor-neutral runtime, distribution, verification, policy, knowledge, enterprise-operations, and controlled-evolution layer for WiseDev agents.
 
 It makes agent behavior reproducible across projects, team members, and coding-agent runtimes without coupling WiseDev to one vendor.
 
@@ -8,25 +8,21 @@ It makes agent behavior reproducible across projects, team members, and coding-a
 
 - **wisedev-suite** — reusable capabilities and Skills.
 - **wisedev-team** — multi-role orchestration and reviewer-gated workflows.
-- **wisedev-harness** — installation, resource resolution, runtime adaptation, verification, policy enforcement, distribution, knowledge, and governed Harness evolution.
+- **wisedev-harness** — installation, resource resolution, runtime adaptation, verification, policy enforcement, distribution, knowledge, enterprise operations, and governed Harness evolution.
 
-## Current milestone: v0.8 scope and team distribution
+## Current milestone: v0.9 enterprise operations
 
-The current implementation includes:
+The implementation now includes:
 
-- project and user scopes with backward-compatible project defaults;
-- explicit safe user-resource inheritance (`inheritUserScope`);
-- local role/tag profiles for per-member Skill selection;
-- deterministic project-over-user precedence for same-name Skills/Sources;
-- named shared Sources so repository URL/ref is declared once;
-- exact commit/content lock semantics for direct and shared remote Skills;
-- offline verified Skill bundle export/import for air-gapped environments;
-- layered project + user Learning Recall;
-- runtime capability matrix for Claude, Codex, and Cursor;
-- merge-safe runtime instruction blocks and declarative cross-runtime Hooks;
-- exact-manifest execution trust, allow/deny policy, secret scanning, and symlink boundary protection;
-- privacy-redacted Session/friction/Learning loop;
+- project/user scopes, role/tag selection, shared Sources, deterministic Skill lock/update/rollback, and offline verified bundles;
+- Claude, Codex, and Cursor instruction/Hook adapters that preserve unmanaged configuration;
+- exact-manifest trust, command policy, secret scanning, repository-boundary protection, and controlled evolution;
+- privacy-redacted Session → friction → Learning → Recall flow;
 - governed Harness evolution: `propose → evaluate → approve → apply → rollback`;
+- opt-in local telemetry, health summaries, and privacy-bounded audit exports;
+- monotonic enterprise policy packs and deterministic policy-conflict explanation;
+- vendor-neutral MCP declarations translated into Claude `.mcp.json`, Codex `.codex/config.toml`, and Cursor `.cursor/mcp.json`;
+- pluggable in-process Recall backend contract with built-in `lexical` and local `json-index` backends;
 - deterministic npm packaging/release pipeline with lockfile, audit, Dependency Review, SBOM, checksum, release metadata, and provenance-ready publication.
 
 ## Install / develop
@@ -44,9 +40,9 @@ After npm publication:
 npm install -g wisedev-harness
 ```
 
-## Project scope
+## Project and user scopes
 
-Project scope is the default and remains compatible with manifests written before v0.8:
+Project scope is the default:
 
 ```bash
 cd /path/to/project
@@ -55,20 +51,15 @@ wisedev-harness pull
 wisedev-harness verify
 ```
 
-Project state lives under `<project>/.agents/`. Claude/Codex/Cursor runtime adapters are written only for project scope.
-
-## User scope
-
 User scope stores cross-project resources under `~/.wisedev-harness`:
 
 ```bash
 wisedev-harness --scope user init
 wisedev-harness --scope user profile set --roles frontend --tags web,vue
 wisedev-harness --scope user pull
-wisedev-harness --scope user verify
 ```
 
-A project does **not** inherit user resources merely because user scope exists. Opt in explicitly:
+A project inherits user resources only when explicitly configured:
 
 ```yaml
 version: 1
@@ -79,40 +70,23 @@ project:
 runtimes: [claude, codex, cursor]
 ```
 
-When inheritance is enabled, user Skills, Sources, Rules, and user Learnings for Recall may be consumed. User Hooks, execution policy, trust state, and command authorization never inherit into a project.
-
-Inspect the effective resolution:
+User Skills, Sources, Rules, and Learnings may be inherited. User Hooks, execution policy, trust state, MCP authorization, and command authorization never inherit into a project.
 
 ```bash
 wisedev-harness scope status
 wisedev-harness scope resolve
 ```
 
-## Role/tag profiles
+## Role/tag profiles and shared Sources
 
-Profiles are local preferences in `<scope>/.agents/profile.yaml` and are Git-ignored by default:
+Profiles are local and Git-ignored:
 
 ```bash
 wisedev-harness --scope user profile set --roles frontend --tags vue,review
-wisedev-harness profile set --tags project-a
 wisedev-harness profile show
 ```
 
-A Skill with no constraints is selected for everyone. When `roles` and/or `tags` are declared, each declared dimension must match the local profile.
-
-```yaml
-skills:
-  - name: frontend-review
-    source: shared
-    sourceName: engineering
-    path: skills/frontend-review
-    roles: [frontend]
-    tags: [review]
-```
-
-## Shared Sources
-
-Declare a team/source repository once:
+Shared repositories are declared once:
 
 ```yaml
 sources:
@@ -125,84 +99,122 @@ skills:
     source: shared
     sourceName: engineering
     path: skills/frontend-review
-
-  - name: release-review
-    source: shared
-    sourceName: engineering
-    path: skills/release-review
+    roles: [frontend]
+    tags: [review]
 ```
 
-`source: shared` is only an alias. The lockfile still stores the effective URL/ref, resolved commit, installed target, and content SHA-256.
+The lockfile still records the effective URL/ref, resolved commit, canonical target, and content SHA-256.
 
-## Reproducible remote Skill lifecycle
+## Reproducible and offline Skill lifecycle
 
 ```bash
-wisedev-harness pull       # consume existing lock pins; resolve only missing pins
-wisedev-harness diff       # inspect upstream movement without changing local content
-wisedev-harness update     # explicitly move configured refs and lock pins
+wisedev-harness pull
+wisedev-harness diff
+wisedev-harness update
 wisedev-harness snapshots
 wisedev-harness rollback
-```
 
-`pull` never silently follows a moving branch after a matching pin exists.
-
-## Offline / air-gapped transfer
-
-On a connected, verified machine:
-
-```bash
 wisedev-harness cache export team-bundle.wdh.gz
-```
-
-On the offline machine:
-
-```bash
 wisedev-harness cache import team-bundle.wdh.gz
 wisedev-harness verify
 ```
 
-Bundles contain exact lock-pinned Skill bytes. Export rejects drifted content and symlinks. Import binds targets to `.agents/skills/<name>`, validates paths, verifies staged content before replacement, and rejects modified payloads.
+Offline import uses canonical `.agents/skills/<name>` targets and verifies staged content before replacement. Forged targets, symlinks, or modified payloads fail closed.
 
-## Runtime capabilities
+## Execution policy and enterprise packs
 
-```bash
-wisedev-harness capabilities
-```
-
-The current adapters cover Claude, Codex, and Cursor instruction files and Hook event translation while preserving unmanaged runtime configuration.
-
-## Execution trust and security
-
-Repository-declared commands do not automatically gain execution rights:
+Repository-declared executable behavior requires explicit project trust:
 
 ```bash
 wisedev-harness trust
 wisedev-harness trust-status
 wisedev-harness security policy npm test
-wisedev-harness hooks inject
+wisedev-harness security explain npm publish
+wisedev-harness security packs
 ```
 
-Trust binds to the exact SHA-256 fingerprint of the current **project** manifest and becomes invalid after any manifest byte change. Execution-bearing resources remain project-owned even when user inheritance is enabled.
-
-Example:
+Built-in policy packs are monotonic: they may add denials or stricter shell rules but never widen an allow list.
 
 ```yaml
-hooks:
-  - id: verify-on-stop
-    description: Run project verification when an agent session stops
-    event: Stop
-    command: npm test
-    timeout: 120
-
 policies:
   requireHookTrust: true
+  policyPacks: [enterprise-baseline]
   execution:
     allow: [npm, git status]
-    deny: [npm publish, rm]
+    deny: [rm]
     denyShellMetacharacters: false
-  protectSymlinkEscapes: true
-  secretScan: true
 ```
+
+`security explain` reports allow matches, deny matches, policy-pack provenance, shell-metacharacter gates, and deny-over-allow conflicts using the same decision path as actual Hook/Evolution execution.
+
+## MCP
+
+Declare MCP once in the Harness manifest:
+
+```yaml
+mcpServers:
+  - name: local-tools
+    transport: stdio
+    command: npx
+    args: [-y, my-mcp-server]
+    env:
+      MODE: production
+
+  - name: remote-tools
+    transport: http
+    url: https://mcp.example.com/mcp
+    bearerTokenEnvVar: MCP_TOKEN
+    headers:
+      X-Team: WiseDev
+```
+
+Then review the manifest and explicitly trust it before injection:
+
+```bash
+wisedev-harness mcp list
+wisedev-harness trust
+wisedev-harness mcp inject
+```
+
+`mcp inject` preserves unmanaged runtime configuration and refuses same-name unmanaged collisions. `mcp remove` removes only WiseDev-managed MCP entries and does not require trust, so emergency cleanup remains possible.
+
+## Enterprise observability
+
+Telemetry is **disabled by default**, remains local, and excludes the project name unless explicitly requested:
+
+```bash
+wisedev-harness telemetry status
+wisedev-harness telemetry enable
+wisedev-harness health
+wisedev-harness health --json
+```
+
+Audit export is explicit:
+
+```bash
+wisedev-harness audit export evidence.wdh-audit.gz
+```
+
+The audit bundle includes the manifest fingerprint/effective configuration, lock state, redacted Session summaries, security decisions, reviewed Learnings, and health summary. It excludes raw Session logs, trust state, caches, Evolution workspaces/backups, and local credentials. MCP environment/header values are redacted.
+
+## Recall backends
+
+Default Recall remains deterministic lexical ranking over tracked Learnings:
+
+```yaml
+recall:
+  backend: lexical
+```
+
+A local prebuilt JSON Learning index can be selected without granting process/network execution:
+
+```yaml
+recall:
+  backend: json-index
+  indexPath: .agents/recall-index.json
+```
+
+The package also exposes an in-process Recall backend registry for trusted integrators. Manifest files cannot declare arbitrary executable Recall backends.
 
 ## Knowledge and controlled evolution
 
@@ -219,8 +231,6 @@ session evidence
   → rollback
 ```
 
-Examples:
-
 ```bash
 wisedev-harness session start "fix checkout regression"
 wisedev-harness session record --type tool_failure --message "test failed"
@@ -230,17 +240,17 @@ wisedev-harness recall checkout regression
 wisedev-harness evolve --help
 ```
 
-With project user inheritance enabled, project Recall searches both project and user Learning stores and ranks results together.
+## Runtime and team governance
 
-## Team governance
+```bash
+wisedev-harness capabilities
+```
 
-See [TEAM_PROTOCOL.md](TEAM_PROTOCOL.md) for resource ownership, precedence, contribution/review workflow, offline transfer, and trust boundaries.
-
-See [SECURITY.md](SECURITY.md) for security reporting and the threat boundary. See [Architecture](docs/architecture.md) and [Roadmap](ROADMAP.md) for implementation direction.
+See [TEAM_PROTOCOL.md](TEAM_PROTOCOL.md) for ownership, precedence, contribution/review workflow, offline transfer, and trust boundaries. See [SECURITY.md](SECURITY.md) for the security model and reporting policy. See [Architecture](docs/architecture.md) and [Roadmap](ROADMAP.md) for implementation direction.
 
 ## Release integrity
 
-Release CI requires tag/package-version parity, deterministic `npm ci`, tests/build/package verification, high-severity dependency auditing, and then emits:
+Release CI requires tag/package-version parity, deterministic `npm ci`, tests/build/package verification, high-severity dependency auditing, and emits:
 
 - the exact npm `.tgz` artifact;
 - `<artifact>.sha256`;
