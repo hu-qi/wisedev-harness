@@ -57,7 +57,7 @@
     "@types/node": "^22.15.30",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^5.0.0"
   },
   "license": "MIT"
 }
